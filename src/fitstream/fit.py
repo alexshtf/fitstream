@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from typing import Any
 import time
 
 import torch
@@ -8,6 +9,27 @@ from torch import nn
 
 from .batching import iter_batches
 from .events import Event
+
+
+def augment(
+    events: Iterable[dict[str, Any]],
+    fn: Callable[[dict[str, Any]], dict[str, Any] | None],
+) -> Iterable[dict[str, Any]]:
+    """Return a stream with extra keys merged into each event.
+
+    Args:
+        events: Iterable of event dictionaries.
+        fn: Function called for each event. The returned mapping is shallow-merged
+            into the event. Returning ``None`` adds nothing.
+
+    Yields:
+        New event dictionaries with the additional keys.
+    """
+    for event in events:
+        extra = fn(event) or {}
+        if not isinstance(extra, dict):
+            raise TypeError("augment function must return a dict or None.")
+        yield event | extra
 
 
 def epoch_stream(
