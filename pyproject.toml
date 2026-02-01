@@ -1,0 +1,30 @@
+[project]
+name = "fitstream"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.6.0",
+]
+
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.1.0",
+    "pyright>=1.1.351",
+    "pre-commit>=3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/alexshtf/fitstream"
+Repository = "https://github.com/alexshtf/fitstream"
+Issues = "https://github.com/alexshtf/fitstream/issues"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
