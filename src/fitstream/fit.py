@@ -74,7 +74,7 @@ def epoch_stream(
     while True:
         model.train()
         epoch_start = time.perf_counter()
-        total_loss = None
+        total_loss = torch.zeros((), device=train_data[0].device)
         total_samples = 0
 
         for batch in iter_batches(*train_data, batch_size=batch_size, shuffle=shuffle, generator=generator):
@@ -92,15 +92,14 @@ def epoch_stream(
             optimizer.step()
 
             batch_samples = inputs[0].shape[0]
-            if total_loss is None:
-                total_loss = loss.detach() * batch_samples
-            else:
-                total_loss += loss.detach() * batch_samples
+            total_loss += loss.detach() * batch_samples
             total_samples += int(batch_samples)
 
         step += 1
-        total_loss = total_loss.cpu().item()
+        epoch_loss = (total_loss / total_samples).item()
         yield Event(
-            model=model, step=step, train_loss=total_loss / total_samples,
-            train_time_sec=time.perf_counter() - epoch_start
+            model=model,
+            step=step,
+            train_loss=epoch_loss,
+            train_time_sec=time.perf_counter() - epoch_start,
         )
