@@ -33,6 +33,7 @@ dev = [
     "ruff>=0.1.0",
     "pyright>=1.1.351",
     "pre-commit>=3.0.0",
+    "numpy>=2.2.2",
 ]
 
 [project.urls]
