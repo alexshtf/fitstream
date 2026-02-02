@@ -10,10 +10,12 @@ from torch import nn
 from .batching import iter_batches
 from .events import Event
 
+Transform = Callable[[Iterable[dict[str, Any]]], Iterable[dict[str, Any]]]
+
 
 def augment(
     fn: Callable[[dict[str, Any]], dict[str, Any] | None],
-) -> Callable[[Iterable[dict[str, Any]]], Iterable[dict[str, Any]]]:
+) -> Transform:
     """Create a transform that merges extra keys into each event.
 
     Args:
@@ -32,6 +34,23 @@ def augment(
             yield event | extra
 
     return transform
+
+
+def pipe(stream: Iterable[dict[str, Any]], *stages: Transform) -> Iterable[dict[str, Any]]:
+    """Compose stream transforms left-to-right.
+
+    Args:
+        stream: Input event stream.
+        stages: Transform functions applied in order.
+
+    Returns:
+        The transformed event stream.
+    """
+    for stage in stages:
+        if not callable(stage):
+            raise TypeError("pipe stages must be callable.")
+        stream = stage(stream)
+    return stream
 
 
 def epoch_stream(
