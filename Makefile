@@ -13,3 +13,6 @@ lint:
 
 pre-commit:
 	uv run pre-commit install
+
+doc:
+	uv run mkdocs build

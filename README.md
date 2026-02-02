@@ -130,3 +130,10 @@ collect_jsonl(events, 'runs/my_experiment.jsonl')
 
 # Documentation
 Full documentation is available at [https://fitstream.readthedocs.io/](https://fitstream.readthedocs.io/).
+
+# Development
+- After cloning this repo, run `make setup` to create a virtual environment and install all dependencies.
+- Building is done via `uv build`.
+- Running tests is done via `make test`
+- Building documentation via `make doc`
+- Linting via `make pre-commit`
