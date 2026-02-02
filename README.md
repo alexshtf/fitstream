@@ -35,22 +35,26 @@ for event in epoch_stream((X, y), batch_size=32, shuffle=True, model, optimizer,
 # Basics
 The core idea of the library is "training loop as a stream of events".  The `epoch_stream` is just an iteable over 
 dictionaries comprising of the epoch, the model, and the training loss. Everything we do is transforming or enriching
-these events.
+these events. FitStream provides a small `pipe(...)` helper to compose transformations left-to-right.
 
 ## Augmentation
-The `augment` function allows merging additional keys into each event. Here is an example - we add the norm
-of the model parameters to each event:
+The `augment` function turns an "augmenter" (a function that looks at an event and returns extra keys) into a stream
+transform stage. We typically compose stages with `pipe(...)`.
+
+Here is an example - we add the norm of the model parameters to each event:
 ```python
 from torch import nn, linalg
-from fitstream import epoch_stream, augment, validation_loss
+from fitstream import epoch_stream, augment, pipe
 
 def model_param_norm(ev: dict) -> dict:
     model_params = nn.utils.parameters_to_vector(ev['model'].parameters())
     return {'model_param_norm': linalg.norm(model_params)}
 
 
-events = epoch_stream(...)
-events = augment(model_param_norm)(events)
+events = pipe(
+    epoch_stream(...),
+    augment(model_param_norm),
+)
 for event in events:
     print(f"step={event['step']}", 
           f"model_param_norm={event['model_param_norm']}"
@@ -60,20 +64,24 @@ for event in events:
 We also have some built-in augmentation functions. Here is an example of adding validation loss to each event:
 ```python
 from torch import nn
-from fitstream import epoch_stream, augment, validation_loss
+from fitstream import epoch_stream, augment, pipe, validation_loss
 
-events = epoch_stream(...)
 validation_set = get_validation_set()
-events = augment(validation_loss(validation_set, nn.CrossEntropyLoss()))(events)
+events = pipe(
+    epoch_stream(...),
+    augment(validation_loss(validation_set, nn.CrossEntropyLoss())),
+)
 for event in events:
     print(f"step={event['step']}, val_loss={event['val_loss']}")
 ```
 
 We can, of course, augment the stream more than once:
 ```python
-events = epoch_stream(...)
-events = augment(validation_loss(...))(events)
-events = augment(model_param_norm)(events)
+events = pipe(
+    epoch_stream(...),
+    augment(validation_loss(...)),
+    augment(model_param_norm),
+)
 for event in events:
     print(f"step={event['step']}", 
           f"val_loss={event['val_loss']}",
@@ -97,9 +105,12 @@ for event in islice(epoch_stream(...), n=100):
 
 `fitstream` has some of its own selection primitives, such as early stopping:
 ```python
-from fitstream import epoch_stream, early_stop, augment, validation_loss
+from fitstream import epoch_stream, early_stop, augment, pipe, validation_loss
 
-events = augment(validation_loss(...))(epoch_stream(...))
+events = pipe(
+    epoch_stream(...),
+    augment(validation_loss(...)),
+)
 for event in early_stop(events, key="val_loss", patience=10):
     print(event)
 ```
