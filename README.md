@@ -50,7 +50,7 @@ def model_param_norm(ev: dict) -> dict:
 
 
 events = epoch_stream(...)
-events = augment(events, model_param_norm)
+events = augment(model_param_norm)(events)
 for event in events:
     print(f"step={event['step']}", 
           f"model_param_norm={event['model_param_norm']}"
@@ -64,16 +64,16 @@ from fitstream import epoch_stream, augment, validation_loss
 
 events = epoch_stream(...)
 validation_set = get_validation_set()
-events = augment(events, validation_loss(validation_set, nn.CrossEntropyLoss()))
+events = augment(validation_loss(validation_set, nn.CrossEntropyLoss()))(events)
 for event in events:
-    print(f"step={event["step"]}, val_loss={event["val_loss"]}")
+    print(f"step={event['step']}, val_loss={event['val_loss']}")
 ```
 
 We can, of course, augment the stream more than once:
 ```python
 events = epoch_stream(...)
-events = augment(events, vlaidation_loss(...))
-events = augment(events, model_param_norm)
+events = augment(validation_loss(...))(events)
+events = augment(model_param_norm)(events)
 for event in events:
     print(f"step={event['step']}", 
           f"val_loss={event['val_loss']}",
@@ -99,7 +99,7 @@ for event in islice(epoch_stream(...), n=100):
 ```python
 from fitstream import epoch_stream, early_stop, augment, validation_loss
 
-events = augment(epoch_stream(...), validation_loss(...))
+events = augment(validation_loss(...))(epoch_stream(...))
 for event in early_stop(events, key="val_loss", patience=10):
     print(event)
 ```

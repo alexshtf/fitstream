@@ -12,24 +12,26 @@ from .events import Event
 
 
 def augment(
-    events: Iterable[dict[str, Any]],
     fn: Callable[[dict[str, Any]], dict[str, Any] | None],
-) -> Iterable[dict[str, Any]]:
-    """Return a stream with extra keys merged into each event.
+) -> Callable[[Iterable[dict[str, Any]]], Iterable[dict[str, Any]]]:
+    """Create a transform that merges extra keys into each event.
 
     Args:
-        events: Iterable of event dictionaries.
         fn: Function called for each event. The returned mapping is shallow-merged
             into the event. Returning ``None`` adds nothing.
 
-    Yields:
-        New event dictionaries with the additional keys.
+    Returns:
+        A transform that accepts an event stream and yields augmented events.
     """
-    for event in events:
-        extra = fn(event) or {}
-        if not isinstance(extra, dict):
-            raise TypeError("augment function must return a dict or None.")
-        yield event | extra
+
+    def transform(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+        for event in events:
+            extra = fn(event) or {}
+            if not isinstance(extra, dict):
+                raise TypeError("augment function must return a dict or None.")
+            yield event | extra
+
+    return transform
 
 
 def epoch_stream(

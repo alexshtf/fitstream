@@ -13,7 +13,7 @@ def test_augment_merges_dicts() -> None:
     def add_double_step(event: dict[str, Any]) -> dict[str, Any]:
         return {"double_step": event["step"] * 2}
 
-    augmented = list(augment(events, add_double_step))
+    augmented = list(augment(add_double_step)(events))
 
     assert augmented[0]["double_step"] == 2
     assert augmented[1]["double_step"] == 4
