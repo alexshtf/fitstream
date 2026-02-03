@@ -4,6 +4,9 @@
 setup:
 	uv sync --all-groups
 
+build:
+	uv build
+
 test:
 	uv run pytest tests
 

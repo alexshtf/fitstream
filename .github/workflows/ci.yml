@@ -27,9 +27,11 @@ jobs:
         with:
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: make setup
       - name: Run tests
-        run: uv run pytest tests
+        run: make test
+      - name: Run lint
+        run: make lint
 
   build-package:
     name: Build package (py${{ matrix.python-version }})
@@ -47,9 +49,9 @@ jobs:
         with:
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: make setup
       - name: Build sdist/wheel
-        run: uv build
+        run: make build
 
   build-docs:
     name: Build docs (py${{ matrix.python-version }})
@@ -67,6 +69,6 @@ jobs:
         with:
           enable-cache: true
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: make setup
       - name: Build docs
-        run: uv run mkdocs build
+        run: make doc
