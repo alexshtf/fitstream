@@ -99,12 +99,10 @@ loss_fn = nn.MSELoss()
 ### 2.3 Train with `epoch_stream`
 
 `epoch_stream(...)` is FitStream’s main entry point. It yields one event **per epoch** forever, so we’ll stop it using
-`itertools.islice`.
+FitStream’s `take(...)` helper.
 
 ```python
-from itertools import islice
-
-from fitstream import epoch_stream
+from fitstream import epoch_stream, take
 
 events = epoch_stream(
     (x_train, y_train),
@@ -115,7 +113,7 @@ events = epoch_stream(
     shuffle=True,
 )
 
-for event in islice(events, 10):
+for event in take(events, 10):
     # each event is a dict-like object
     print(f"epoch={event['step']:03d} train_loss={event['train_loss']:.4f}")
 ```
@@ -128,9 +126,9 @@ Since a stream is just an iterable, you can “sink” it into a list. FitStream
 so you store metrics instead of huge Python objects.
 
 ```python
-from fitstream import collect
+from fitstream import collect, take
 
-history = collect(islice(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=256), 50))
+history = collect(take(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=256), 50))
 print(history[-1])
 # {'step': 50, 'train_loss': 0.23, 'train_time_sec': 0.01}
 ```
@@ -190,10 +188,9 @@ loss_fn = nn.MSELoss()
 Train for a fixed number of epochs:
 
 ```python
-from itertools import islice
-from fitstream import epoch_stream
+from fitstream import epoch_stream, take
 
-for event in islice(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True), 20):
+for event in take(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True), 20):
     print(f"epoch={event['step']:03d} train_loss={event['train_loss']:.4f}")
 ```
 
@@ -204,16 +201,14 @@ So far we only tracked training loss. FitStream’s `augment(...)` lets you atta
 FitStream includes a built-in augmenter factory: `validation_loss(...)`.
 
 ```python
-from itertools import islice
-
-from fitstream import augment, epoch_stream, pipe, validation_loss
+from fitstream import augment, epoch_stream, pipe, take, validation_loss
 
 events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
     augment(validation_loss((x_val, y_val), loss_fn, key="val_loss")),
 )
 
-for event in islice(events, 10):
+for event in take(events, 10):
     print(
         f"epoch={event['step']:03d}",
         f"train_loss={event['train_loss']:.4f}",
@@ -229,7 +224,7 @@ What just happened?
 
 ## 5) Stop automatically with `early_stop`
 
-`epoch_stream` is infinite by design, so you need a stop condition. The simplest is `islice(...)`.
+`epoch_stream` is infinite by design, so you need a stop condition. The simplest is `take(...)`.
 The more “ML-ish” approach is early stopping on validation loss.
 
 ```python
@@ -385,7 +380,6 @@ Here’s a complete training script with:
 - saving results to JSONL
 
 ```python
-from itertools import islice
 from pathlib import Path
 
 import torch

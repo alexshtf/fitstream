@@ -54,6 +54,52 @@ def pipe(stream: Iterable[dict[str, Any]], *stages: Transform) -> Iterable[dict[
 
 
 @overload
+def take(
+    events: Iterable[dict[str, Any]],
+    n: int,
+) -> Iterable[dict[str, Any]]: ...
+
+
+@overload
+def take(
+    n: int,
+) -> Transform: ...
+
+
+def take(
+    events_or_n: Iterable[dict[str, Any]] | int,
+    n: int | None = None,
+) -> Iterable[dict[str, Any]] | Transform:
+    """Limit an event stream to the first ``n`` events.
+
+    Can be used directly on a stream or as a pipe stage:
+
+    - ``take(events, 10)``
+    - ``pipe(events, take(10))``
+    """
+    if n is None:
+        if not isinstance(events_or_n, int):
+            raise TypeError("take expects an integer n or (events, n).")
+        n = events_or_n
+
+        def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+            if n < 0:
+                raise ValueError("n must be >= 0.")
+            count = 0
+            for event in events:
+                if count >= n:
+                    break
+                yield event
+                count += 1
+
+        return stage
+
+    if n < 0:
+        raise ValueError("n must be >= 0.")
+    return take(n)(events_or_n)
+
+
+@overload
 def early_stop(
     events: Iterable[dict[str, Any]],
     *,
