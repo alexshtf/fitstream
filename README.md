@@ -126,7 +126,7 @@ from fitstream import epoch_stream, collect
 from itertools import islice
 
 # collect 100 epochs to a list
-events = islice(fit_stream(...), n=100)
+events = islice(epoch_stream(...), n=100)
 history = collect(events)
 ```
 
@@ -135,7 +135,7 @@ We can also store them to a `jsonl` file:
 from fitstream import epoch_stream, collect_jsonl
 
 # collect 100 epochs to json
-events = islice(fit_stream(...), n=100)
+events = islice(epoch_stream(...), n=100)
 collect_jsonl(events, 'runs/my_experiment.jsonl')
 ```
 
