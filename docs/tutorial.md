@@ -321,7 +321,22 @@ across events:
 - keeping track of the best metric
 - checkpoints
 
-### 7.1 Example: exponential moving average (EMA)
+### 7.1 Quick side effects with `tap(...)`
+
+FitStream includes a small helper for side effects: `tap(fn)` calls `fn(event)` and yields the event unchanged.
+It’s perfect for lightweight logging or writing metrics to an external system.
+
+```python
+from fitstream import tap
+
+events = pipe(
+    epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
+    augment(validation_loss((x_val, y_val), loss_fn)),
+    tap(lambda event: print(f"epoch={event['step']:03d} val_loss={event['val_loss']:.4f}")),
+)
+```
+
+### 7.2 Example: exponential moving average (EMA)
 
 This stage adds a new key like `val_loss_ema` to each event.
 
@@ -344,7 +359,7 @@ def ema(key: str, *, alpha: float = 0.2, out_key: str | None = None):
     return stage
 ```
 
-### 7.2 Example: print progress every N epochs
+### 7.3 Example: print progress every N epochs
 
 ```python
 from collections.abc import Iterable

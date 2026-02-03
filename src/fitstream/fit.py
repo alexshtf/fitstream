@@ -99,6 +99,21 @@ def take(
     return take(n)(events_or_n)
 
 
+def tap(
+    fn: Callable[[dict[str, Any]], Any],
+) -> Transform:
+    """Create a stage that performs side effects and yields events unchanged."""
+    if not callable(fn):
+        raise TypeError("tap requires a callable.")
+
+    def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+        for event in events:
+            fn(event)
+            yield event
+
+    return stage
+
+
 @overload
 def early_stop(
     events: Iterable[dict[str, Any]],
