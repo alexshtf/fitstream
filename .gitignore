@@ -1,6 +1,7 @@
 .venv
 .idea
 .ruff_cache
+.pre-commit-cache
 __pycache__/
 *.pyc
 site/

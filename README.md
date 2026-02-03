@@ -16,15 +16,16 @@ Training a model:
 ```python
 from torch.optim import Adam
 
-from fitstream import epoch_stream # <-- the library's main entry point
+from fitstream import epoch_stream, take # epoch_stream is the main entry point
 
 X, y = get_data()
 model = get_model()
 loss = get_loss()
 optimizer = Adam(model.parameters())
 
-# an infinite stream of training epochs
-for event in epoch_stream((X, y), model, optimizer, loss, batch_size=32, shuffle=True):
+# an infinite stream of training epochs (limit it with `take` or `early_stop`)
+events = epoch_stream((X, y), model, optimizer, loss, batch_size=32, shuffle=True)
+for event in take(events, 10):
     print(f"step={event['step']}, loss={event['train_loss']}")
 # epoch=1, loss=...
 # epoch=2, loss=...
@@ -89,12 +90,12 @@ for event in events:
 ```
 
 ## Selecting events
-Since the training loop is a standard Python iterable, we can use `itertools` directly. For example, we typically
-want to limit the number of epochs:
+Since the training loop is a standard Python iterable, you can use any Python selection logic. FitStream includes a
+small helper, `take(...)`, to limit the number of epochs:
 ```python
-from itertools import islice
+from fitstream import epoch_stream, take
 
-for event in islice(epoch_stream(...), 100):
+for event in take(epoch_stream(...), 100):
     print(event)
 # {'step': 1, ....}
 # {'step': 2, ...}
@@ -104,14 +105,29 @@ for event in islice(epoch_stream(...), 100):
 
 `fitstream` has some of its own selection primitives, such as early stopping:
 ```python
-from fitstream import epoch_stream, early_stop, augment, pipe, validation_loss
+from fitstream import augment, early_stop, epoch_stream, pipe, take, validation_loss
 
 events = pipe(
     epoch_stream(...),
     augment(validation_loss(...)),
+    take(500),  # safety cap
+    early_stop(key="val_loss", patience=10),
 )
-for event in early_stop(events, key="val_loss", patience=10):
+for event in events:
     print(event)
+```
+
+## Side effects
+Sometimes you want to log metrics (or write to an external system) without changing the stream. Use `tap(fn)`:
+```python
+from fitstream import epoch_stream, pipe, tap, take
+
+events = pipe(
+    epoch_stream(...),
+    tap(lambda ev: print(ev["step"], ev["train_loss"])),
+    take(10),
+)
+list(events)
 ```
 
 ## Sinks
@@ -121,21 +137,18 @@ event stream.
 It is typically useful to collect all events into a list, but exclude the `model` and keep just the metrics. We have 
 the `collect` sink for that:
 ```python
-from fitstream import epoch_stream, collect
-from itertools import islice
+from fitstream import collect, epoch_stream, take
 
 # collect 100 epochs to a list
-events = islice(epoch_stream(...), 100)
-history = collect(events)
+history = collect(take(epoch_stream(...), 100))
 ```
 
 We can also store them to a `jsonl` file:
 ```python
-from fitstream import epoch_stream, collect_jsonl
+from fitstream import collect_jsonl, epoch_stream, take
 
 # collect 100 epochs to json
-events = islice(epoch_stream(...), 100)
-collect_jsonl(events, 'runs/my_experiment.jsonl')
+collect_jsonl(take(epoch_stream(...), 100), 'runs/my_experiment.jsonl')
 ```
 
 # Documentation
