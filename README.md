@@ -14,7 +14,6 @@ pip install fitstream
 
 Training a model:
 ```python
-from torch import nn
 from torch.optim import Adam
 
 from fitstream import epoch_stream # <-- the library's main entry point
@@ -25,7 +24,7 @@ loss = get_loss()
 optimizer = Adam(model.parameters())
 
 # an infinite stream of training epochs
-for event in epoch_stream((X, y), batch_size=32, shuffle=True, model, optimizer, loss):
+for event in epoch_stream((X, y), model, optimizer, loss, batch_size=32, shuffle=True):
     print(f"step={event['step']}, loss={event['train_loss']}")
 # epoch=1, loss=...
 # epoch=2, loss=...
@@ -33,7 +32,7 @@ for event in epoch_stream((X, y), batch_size=32, shuffle=True, model, optimizer,
 ```
 
 # Basics
-The core idea of the library is "training loop as a stream of events".  The `epoch_stream` is just an iteable over 
+The core idea of the library is "training loop as a stream of events".  The `epoch_stream` is just an iterable over 
 dictionaries comprising of the epoch, the model, and the training loss. Everything we do is transforming or enriching
 these events. FitStream provides a small `pipe(...)` helper to compose transformations left-to-right.
 
@@ -95,7 +94,7 @@ want to limit the number of epochs:
 ```python
 from itertools import islice
 
-for event in islice(epoch_stream(...), n=100):
+for event in islice(epoch_stream(...), 100):
     print(event)
 # {'step': 1, ....}
 # {'step': 2, ...}
@@ -126,7 +125,7 @@ from fitstream import epoch_stream, collect
 from itertools import islice
 
 # collect 100 epochs to a list
-events = islice(epoch_stream(...), n=100)
+events = islice(epoch_stream(...), 100)
 history = collect(events)
 ```
 
@@ -135,7 +134,7 @@ We can also store them to a `jsonl` file:
 from fitstream import epoch_stream, collect_jsonl
 
 # collect 100 epochs to json
-events = islice(epoch_stream(...), n=100)
+events = islice(epoch_stream(...), 100)
 collect_jsonl(events, 'runs/my_experiment.jsonl')
 ```
 
@@ -147,4 +146,4 @@ Full documentation is available at [https://fitstream.readthedocs.io/](https://f
 - Building is done via `uv build`.
 - Running tests is done via `make test`
 - Building documentation via `make doc`
-- Linting via `make pre-commit`
+- Linting via `make lint`
