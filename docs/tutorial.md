@@ -99,7 +99,7 @@ loss_fn = nn.MSELoss()
 ### 2.3 Train with `epoch_stream`
 
 `epoch_stream(...)` is FitStream’s main entry point. It yields one event **per epoch** forever, so we’ll stop it using
-FitStream’s `take(...)` helper.
+FitStream’s `take(...)` helper. You can use it directly (`take(events, 10)`) or as a pipe stage (`pipe(events, take(10))`).
 
 ```python
 from fitstream import epoch_stream, take
@@ -327,7 +327,7 @@ FitStream includes a small helper for side effects: `tap(fn)` calls `fn(event)` 
 It’s perfect for lightweight logging or writing metrics to an external system.
 
 ```python
-from fitstream import tap
+from fitstream import augment, epoch_stream, pipe, tap, validation_loss
 
 events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
