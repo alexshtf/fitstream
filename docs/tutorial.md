@@ -347,7 +347,35 @@ events = pipe(
 list(take(events, 5))
 ```
 
-### 7.2 Example: exponential moving average (EMA)
+### 7.2 Learning rate scheduling with `tick(...)`
+
+If you have a `tick(fn)` stage (a no-argument cousin of `tap(...)` that calls `fn()` once per event), it’s a clean way
+to integrate learning rate schedulers that step once per epoch.
+
+For example, linear warmup from 10% → 100% over the first 10 epochs:
+
+```python
+from torch.optim.lr_scheduler import LinearLR
+from fitstream import augment, epoch_stream, pipe, take, tick
+
+scheduler = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=10)
+
+events = pipe(
+    epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
+    # Record the LR used for this epoch...
+    augment(lambda ev: {"lr": optimizer.param_groups[0]["lr"]}),
+    # ...then step the scheduler to set the LR for the next epoch.
+    tick(scheduler.step),
+    take(50),
+)
+
+for ev in events:
+    print(ev["step"], ev["train_loss"], ev["lr"])
+```
+
+If your scheduler needs a metric (e.g. `ReduceLROnPlateau`), use `tap(...)` instead so you can pass `event["val_loss"]`.
+
+### 7.3 Example: exponential moving average (EMA)
 
 This stage adds a new key like `val_loss_ema` to each event.
 
@@ -370,7 +398,7 @@ def ema(key: str, *, alpha: float = 0.2, out_key: str | None = None):
     return stage
 ```
 
-### 7.3 Example: print progress every N epochs
+### 7.4 Example: print progress every N epochs
 
 ```python
 from collections.abc import Iterable
