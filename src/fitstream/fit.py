@@ -62,12 +62,12 @@ def take(
 
 @overload
 def take(
-    n: int,
+    events: int,
 ) -> Transform: ...
 
 
 def take(
-    events_or_n: Iterable[dict[str, Any]] | int,
+    events: Iterable[dict[str, Any]] | int,
     n: int | None = None,
 ) -> Iterable[dict[str, Any]] | Transform:
     """Limit an event stream to the first ``n`` events.
@@ -78,9 +78,9 @@ def take(
     - ``pipe(events, take(10))``
     """
     if n is None:
-        if not isinstance(events_or_n, int):
+        if not isinstance(events, int):
             raise TypeError("take expects an integer n or (events, n).")
-        n = events_or_n
+        n = events
 
         def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
             if n < 0:
@@ -96,7 +96,9 @@ def take(
 
     if n < 0:
         raise ValueError("n must be >= 0.")
-    return take(n)(events_or_n)
+    if isinstance(events, int):
+        raise TypeError("take expects (events, n) or (n).")
+    return take(n)(events)
 
 
 def tap(
@@ -109,6 +111,21 @@ def tap(
     def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
         for event in events:
             fn(event)
+            yield event
+
+    return stage
+
+
+def tick(
+    fn: Callable[[], Any],
+) -> Transform:
+    """Create a stage that runs a no-arg callback per event and yields events unchanged."""
+    if not callable(fn):
+        raise TypeError("tick requires a callable.")
+
+    def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+        for event in events:
+            fn()
             yield event
 
     return stage
