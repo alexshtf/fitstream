@@ -116,7 +116,7 @@ events = epoch_stream(
     shuffle=True,
 )
 
-for event in take(events, 10):
+for event in take(10)(events):
     # each event is a dict-like object
     print(f"epoch={event['step']:03d} train_loss={event['train_loss']:.4f}")
 ```
@@ -134,7 +134,7 @@ training unless you re-create `model` and `optimizer`.
 ```python
 from fitstream import collect, take
 
-history = collect(take(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=256), 50))
+history = collect(take(50)(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=256)))
 print(history[-1])
 # {'step': 50, 'train_loss': 0.23, 'train_time_sec': 0.01}
 ```
@@ -196,7 +196,7 @@ Train for a fixed number of epochs:
 ```python
 from fitstream import epoch_stream, take
 
-for event in take(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True), 20):
+for event in take(20)(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True)):
     print(f"epoch={event['step']:03d} train_loss={event['train_loss']:.4f}")
 ```
 
@@ -214,7 +214,7 @@ events = pipe(
     augment(validation_loss((x_val, y_val), loss_fn, key="val_loss")),
 )
 
-for event in take(events, 10):
+for event in take(10)(events):
     print(
         f"epoch={event['step']:03d}",
         f"train_loss={event['train_loss']:.4f}",
@@ -344,7 +344,7 @@ events = pipe(
 )
 
 # Consume a few events to actually run it (streams are lazy).
-list(take(events, 5))
+list(take(5)(events))
 ```
 
 ### 7.2 Learning rate scheduling with `tick(...)`

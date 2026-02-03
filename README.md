@@ -25,7 +25,7 @@ optimizer = Adam(model.parameters())
 
 # an infinite stream of training epochs (limit it with `take` or `early_stop`)
 events = epoch_stream((X, y), model, optimizer, loss, batch_size=32, shuffle=True)
-for event in take(events, 10):
+for event in take(10)(events):
     print(f"step={event['step']}, loss={event['train_loss']}")
 # epoch=1, loss=...
 # epoch=2, loss=...
@@ -95,7 +95,7 @@ small helper, `take(...)`, to limit the number of epochs:
 ```python
 from fitstream import epoch_stream, take
 
-for event in take(epoch_stream(...), 100):
+for event in take(100)(epoch_stream(...)):
     print(event)
 # {'step': 1, ....}
 # {'step': 2, ...}
@@ -140,7 +140,7 @@ the `collect` sink for that:
 from fitstream import collect, epoch_stream, take
 
 # collect 100 epochs to a list
-history = collect(take(epoch_stream(...), 100))
+history = collect(take(100)(epoch_stream(...)))
 ```
 
 We can also store them to a `jsonl` file:
@@ -148,7 +148,7 @@ We can also store them to a `jsonl` file:
 from fitstream import collect_jsonl, epoch_stream, take
 
 # collect 100 epochs to json
-collect_jsonl(take(epoch_stream(...), 100), 'runs/my_experiment.jsonl')
+collect_jsonl(take(100)(epoch_stream(...)), 'runs/my_experiment.jsonl')
 ```
 
 # Documentation

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any, overload
+from typing import Any
 import time
 
 import torch
@@ -53,52 +53,26 @@ def pipe(stream: Iterable[dict[str, Any]], *stages: Transform) -> Iterable[dict[
     return stream
 
 
-@overload
-def take(
-    events: Iterable[dict[str, Any]],
-    n: int,
-) -> Iterable[dict[str, Any]]: ...
-
-
-@overload
-def take(
-    events: int,
-) -> Transform: ...
-
-
-def take(
-    events: Iterable[dict[str, Any]] | int,
-    n: int | None = None,
-) -> Iterable[dict[str, Any]] | Transform:
+def take(n: int) -> Transform:
     """Limit an event stream to the first ``n`` events.
 
     Can be used directly on a stream or as a pipe stage:
 
-    - ``take(events, 10)``
+    - ``take(10)(events)``
     - ``pipe(events, take(10))``
     """
-    if n is None:
-        if not isinstance(events, int):
-            raise TypeError("take expects an integer n or (events, n).")
-        n = events
-
-        def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
-            if n < 0:
-                raise ValueError("n must be >= 0.")
-            count = 0
-            for event in events:
-                if count >= n:
-                    break
-                yield event
-                count += 1
-
-        return stage
-
     if n < 0:
         raise ValueError("n must be >= 0.")
-    if isinstance(events, int):
-        raise TypeError("take expects (events, n) or (n).")
-    return take(n)(events)
+
+    def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+        count = 0
+        for event in events:
+            if count >= n:
+                break
+            yield event
+            count += 1
+
+    return stage
 
 
 def tap(
@@ -131,34 +105,14 @@ def tick(
     return stage
 
 
-@overload
 def early_stop(
-    events: Iterable[dict[str, Any]],
-    *,
     key: str,
     patience: int,
-) -> Iterable[dict[str, Any]]: ...
-
-
-@overload
-def early_stop(
-    *,
-    key: str,
-    patience: int,
-) -> Transform: ...
-
-
-def early_stop(
-    events: Iterable[dict[str, Any]] | None = None,
-    *,
-    key: str,
-    patience: int,
-) -> Iterable[dict[str, Any]] | Transform:
+) -> Transform:
     """Yield events until the metric stops improving for `patience` steps.
 
-    Can be used directly on a stream or as a pipe stage:
+    Use as a pipe stage:
 
-    - ``early_stop(events, key="val_loss", patience=10)``
     - ``pipe(events, early_stop(key="val_loss", patience=10))``
     """
     if patience < 1:
@@ -178,9 +132,7 @@ def early_stop(
             if bad >= patience:
                 break
 
-    if events is None:
-        return apply
-    return apply(events)
+    return apply
 
 
 def epoch_stream(
