@@ -2,25 +2,37 @@
 name = "fitstream"
 version = "0.1.0"
 description = "A library to train PyTorch models as a stream of events"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "torch>=2.6.0",
 ]
-license = { text = "Apache 2.0" }
+license = { file = "LICENSE" }
 authors = [
     { name = "Alex Shtoff", email = "alex.shtf@gmail.com" }
 ]
-keywords = ["pytorch", "dataloader"]
+keywords = [
+    "machine-learning",
+    "deep-learning",
+    "neural-networks",
+    "pytorch",
+    "torch",
+    "training",
+    "metrics",
+    "pipeline",
+    "dataloader",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries",
 ]
 
 [build-system]
@@ -40,6 +52,7 @@ dev = [
 ]
 
 [project.urls]
+Documentation = "https://fitstream.readthedocs.io/"
 Homepage = "https://github.com/alexshtf/fitstream"
 Repository = "https://github.com/alexshtf/fitstream"
 Issues = "https://github.com/alexshtf/fitstream/issues"
