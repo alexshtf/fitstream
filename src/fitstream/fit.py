@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any
+from typing import Any, overload
 import time
 
 import torch
@@ -53,27 +53,56 @@ def pipe(stream: Iterable[dict[str, Any]], *stages: Transform) -> Iterable[dict[
     return stream
 
 
+@overload
 def early_stop(
     events: Iterable[dict[str, Any]],
     *,
     key: str,
     patience: int,
-) -> Iterable[dict[str, Any]]:
-    """Yield events until the metric stops improving for `patience` steps."""
+) -> Iterable[dict[str, Any]]: ...
+
+
+@overload
+def early_stop(
+    *,
+    key: str,
+    patience: int,
+) -> Transform: ...
+
+
+def early_stop(
+    events: Iterable[dict[str, Any]] | None = None,
+    *,
+    key: str,
+    patience: int,
+) -> Iterable[dict[str, Any]] | Transform:
+    """Yield events until the metric stops improving for `patience` steps.
+
+    Can be used directly on a stream or as a pipe stage:
+
+    - ``early_stop(events, key="val_loss", patience=10)``
+    - ``pipe(events, early_stop(key="val_loss", patience=10))``
+    """
     if patience < 1:
         raise ValueError("patience must be >= 1.")
-    best = float("inf")
-    bad = 0
-    for event in events:
-        value = float(event[key])
-        if value < best:
-            best = value
-            bad = 0
-        else:
-            bad += 1
-        yield event
-        if bad >= patience:
-            break
+
+    def apply(stream: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+        best = float("inf")
+        bad = 0
+        for event in stream:
+            value = float(event[key])
+            if value < best:
+                best = value
+                bad = 0
+            else:
+                bad += 1
+            yield event
+            if bad >= patience:
+                break
+
+    if events is None:
+        return apply
+    return apply(events)
 
 
 def epoch_stream(
