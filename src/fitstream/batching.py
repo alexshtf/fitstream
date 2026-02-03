@@ -1,9 +1,10 @@
-from typing import Tuple, Iterable, Sequence
+from typing import Iterable, Sequence
 
 import torch
 
+
 def iter_batches(
-        *tensors, batch_size: int = 1, shuffle: bool = True, generator:torch.Generator | None = None
+    *tensors, batch_size: int = 1, shuffle: bool = True, generator: torch.Generator | None = None
 ) -> Iterable[Sequence[torch.Tensor]]:
     """Yields batches from tensors, optionally shuffled.
 

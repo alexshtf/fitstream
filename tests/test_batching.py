@@ -24,7 +24,9 @@ def test_iter_batches_shuffle_is_deterministic_with_generator() -> None:
     target_tensor = torch.arange(10) * 10
 
     random_generator = torch.Generator().manual_seed(1234)
-    batch_tuples = list(iter_batches(feature_tensor, target_tensor, batch_size=3, shuffle=True, generator=random_generator))
+    batch_tuples = list(
+        iter_batches(feature_tensor, target_tensor, batch_size=3, shuffle=True, generator=random_generator)
+    )
 
     expected_indices = torch.randperm(10, generator=torch.Generator().manual_seed(1234))
     expected_features = feature_tensor[expected_indices]

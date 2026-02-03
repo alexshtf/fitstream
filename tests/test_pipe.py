@@ -45,4 +45,4 @@ def test_pipe_is_lazy() -> None:
 
 def test_pipe_rejects_non_callable_stage() -> None:
     with pytest.raises(TypeError):
-        list(pipe([{"step": 1}], None))
+        list(pipe([{"step": 1}], None))  # type: ignore[arg-type]

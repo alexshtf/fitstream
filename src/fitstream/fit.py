@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import Any
 import time
 
@@ -145,7 +145,7 @@ def epoch_stream(
     shuffle: bool = True,
     last_label: bool = True,
     generator: torch.Generator | None = None,
-) -> Iterable[Event]:
+) -> Iterator[Event]:
     """Yield per-epoch training events from in-memory tensors.
 
     Args:

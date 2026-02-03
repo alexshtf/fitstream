@@ -27,7 +27,7 @@ def test_epoch_stream_aggregates_loss_over_samples() -> None:
     stream = epoch_stream((x, y), model, optimizer, nn.MSELoss(), batch_size=3, shuffle=False)
     event = next(stream)
 
-    expected = (y ** 2).mean().item()
+    expected = (y**2).mean().item()
     assert event["train_loss"] == pytest.approx(expected)
 
 
