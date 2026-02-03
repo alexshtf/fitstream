@@ -53,6 +53,29 @@ def pipe(stream: Iterable[dict[str, Any]], *stages: Transform) -> Iterable[dict[
     return stream
 
 
+def early_stop(
+    events: Iterable[dict[str, Any]],
+    *,
+    key: str,
+    patience: int,
+) -> Iterable[dict[str, Any]]:
+    """Yield events until the metric stops improving for `patience` steps."""
+    if patience < 1:
+        raise ValueError("patience must be >= 1.")
+    best = float("inf")
+    bad = 0
+    for event in events:
+        value = float(event[key])
+        if value < best:
+            best = value
+            bad = 0
+        else:
+            bad += 1
+        yield event
+        if bad >= patience:
+            break
+
+
 def epoch_stream(
     train_data: Sequence[torch.Tensor],
     model: nn.Module,
