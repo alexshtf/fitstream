@@ -17,6 +17,9 @@ FitStream’s core idea is:
 > Your training loop is an **event stream** (an iterable of dictionaries).
 > Each epoch yields an event like `{"step": 1, "train_loss": ..., "model": ..., ...}`.
 
+A stream is **lazy**: nothing happens until you iterate over it (with a `for` loop, `list(...)`, `collect(...)`, etc.).
+Since `epoch_stream` is infinite, you’ll usually add a stop condition like `take(n)` or `early_stop(...)`.
+
 ## 0) Install (start from zero)
 
 FitStream requires Python 3.12+ and PyTorch.
@@ -99,7 +102,7 @@ loss_fn = nn.MSELoss()
 ### 2.3 Train with `epoch_stream`
 
 `epoch_stream(...)` is FitStream’s main entry point. It yields one event **per epoch** forever, so we’ll stop it using
-FitStream’s `take(...)` helper. You can use it directly (`take(events, 10)`) or as a pipe stage (`pipe(events, take(10))`).
+FitStream’s `take(...)` helper.
 
 ```python
 from fitstream import epoch_stream, take
@@ -124,6 +127,9 @@ That’s the most basic FitStream workflow: **iterate over events**.
 
 Since a stream is just an iterable, you can “sink” it into a list. FitStream’s `collect(...)` drops `model` by default
 so you store metrics instead of huge Python objects.
+
+Note: `epoch_stream(...)` trains the live `model` you pass in. If you run multiple examples in order, you’re continuing
+training unless you re-create `model` and `optimizer`.
 
 ```python
 from fitstream import collect, take
@@ -225,14 +231,16 @@ What just happened?
 ## 5) Stop automatically with `early_stop`
 
 `epoch_stream` is infinite by design, so you need a stop condition. The simplest is `take(...)`.
-The more “ML-ish” approach is early stopping on validation loss.
+The more “ML-ish” approach is early stopping on validation loss. In practice, it’s common to use both: `take(max_epochs)`
+as a safety cap plus `early_stop(...)` to stop early.
 
 ```python
-from fitstream import early_stop
+from fitstream import early_stop, take
 
 events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
     augment(validation_loss((x_val, y_val), loss_fn)),
+    take(500),
     early_stop(key="val_loss", patience=10),
 )
 
@@ -327,13 +335,16 @@ FitStream includes a small helper for side effects: `tap(fn)` calls `fn(event)` 
 It’s perfect for lightweight logging or writing metrics to an external system.
 
 ```python
-from fitstream import augment, epoch_stream, pipe, tap, validation_loss
+from fitstream import augment, epoch_stream, pipe, take, tap, validation_loss
 
 events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
     augment(validation_loss((x_val, y_val), loss_fn)),
     tap(lambda event: print(f"epoch={event['step']:03d} val_loss={event['val_loss']:.4f}")),
 )
+
+# Consume a few events to actually run it (streams are lazy).
+list(take(events, 5))
 ```
 
 ### 7.2 Example: exponential moving average (EMA)
@@ -392,6 +403,7 @@ Here’s a complete training script with:
 - EMA smoothing of `val_loss`
 - periodic printing
 - early stopping
+- max epoch cap (`take`)
 - saving results to JSONL
 
 ```python
@@ -400,7 +412,7 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from fitstream import augment, collect_jsonl, early_stop, epoch_stream, pipe, validation_loss
+from fitstream import augment, collect_jsonl, early_stop, epoch_stream, pipe, take, validation_loss
 
 RUNS_DIR = Path("runs")
 RUNS_DIR.mkdir(exist_ok=True)
@@ -421,6 +433,7 @@ events = pipe(
     augment(model_param_norm),
     ema("val_loss", alpha=0.2),
     print_every(10, keys=("train_loss", "val_loss", "val_loss_ema", "param_l2")),
+    take(500),
     early_stop(key="val_loss", patience=20),
 )
 
