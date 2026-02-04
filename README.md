@@ -1,6 +1,15 @@
 # FitStream
 A tiny library to make PyTorch experiment easy for small models and in-memory datasets.
 
+<div align="center">
+
+[![fitstream-build](https://github.com/alexshtf/fitstream/actions/workflows/ci.yml/badge.svg)](https://github.com/alexshtf/fitstream/actions/workflows/ci.yml)
+[![PyPI downloads](https://img.shields.io/pypi/dm/fitstream)](https://pypi.org/project/fitstream/)
+[![PyPI](https://img.shields.io/pypi/v/fitstream)](https://pypi.org/project/fitstream/)
+![Python version](https://img.shields.io/badge/python-3.12+-important)
+
+</div>
+
 # Getting started
 Using `uv`
 ```shell
