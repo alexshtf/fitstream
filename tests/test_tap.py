@@ -22,7 +22,7 @@ def test_tap_rejects_non_callable() -> None:
         tap(None)  # type: ignore[arg-type]
 
 
-def test_tap_every_applies_callback_on_cadence() -> None:
+def test_tap_every_applies_callback_every_n_events() -> None:
     events = [{"step": 1}, {"step": 2}, {"step": 3}, {"step": 4}, {"step": 5}]
     seen: list[int] = []
 
@@ -35,7 +35,7 @@ def test_tap_every_applies_callback_on_cadence() -> None:
     assert result == events
 
 
-def test_tap_start_offsets_cadence() -> None:
+def test_tap_start_offsets_every_n_events() -> None:
     events = [{"step": 1}, {"step": 2}, {"step": 3}, {"step": 4}, {"step": 5}]
     seen: list[int] = []
 

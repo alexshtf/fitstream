@@ -344,7 +344,7 @@ across events:
 
 ### 7.1 Quick side effects with `tap(...)`
 
-FitStream includes a small helper for side effects: `tap(fn, every=...)` calls `fn(event)` on a cadence and yields
+FitStream includes a small helper for side effects: `tap(fn, every=...)` calls `fn(event)` every N events and yields
 the event unchanged. It’s perfect for lightweight logging or writing metrics to an external system.
 
 ```python
