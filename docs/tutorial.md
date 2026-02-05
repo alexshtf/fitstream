@@ -241,7 +241,7 @@ events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
     augment(validation_loss((x_val, y_val), loss_fn)),
     take(500),
-    early_stop(key="val_loss", patience=10),
+    early_stop(key="val_loss", patience=10, mode="min", min_delta=1e-4),
 )
 
 history = list(events)  # finite now
@@ -250,8 +250,21 @@ print("stopped at epoch", history[-1]["step"])
 
 Notes:
 
-- `early_stop(..., key="val_loss", ...)` assumes “lower is better”.
+- `early_stop(..., mode="min")` (the default) treats lower values as better.
+- Use `mode="max"` for metrics where higher is better (for example `val_acc`).
+- `min_delta` is an absolute threshold for improvement, so tiny metric noise does not reset patience.
 - It yields events up to (and including) the epoch that triggers stopping.
+
+For an accuracy metric, switch to `mode="max"`:
+
+```python
+events = pipe(
+    epoch_stream(...),
+    augment(...),  # produce "val_acc" on each event
+    take(500),
+    early_stop(key="val_acc", patience=10, mode="max", min_delta=1e-3),
+)
+```
 
 ## 6) Become a hero: write your own augmenter
 
@@ -462,7 +475,7 @@ events = pipe(
     ema("val_loss", alpha=0.2),
     print_every(10, keys=("train_loss", "val_loss", "val_loss_ema", "param_l2")),
     take(500),
-    early_stop(key="val_loss", patience=20),
+    early_stop(key="val_loss", patience=20, mode="min", min_delta=1e-4),
 )
 
 # Write the whole training history to disk (one JSON object per line).

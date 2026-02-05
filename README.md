@@ -120,11 +120,14 @@ events = pipe(
     epoch_stream(...),
     augment(validation_loss(...)),
     take(500),  # safety cap
-    early_stop(key="val_loss", patience=10),
+    early_stop(key="val_loss", patience=10, mode="min", min_delta=1e-4),
 )
 for event in events:
     print(event)
 ```
+
+`mode="min"` is the default. Use `mode="max"` for metrics such as accuracy, and set
+`min_delta` to ignore tiny noisy changes.
 
 ## Side effects
 Sometimes you want to log metrics (or write to an external system) without changing the stream. Use `tap(fn)`:
