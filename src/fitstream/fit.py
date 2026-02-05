@@ -124,13 +124,15 @@ def print_keys(
         raise ValueError("Provide at least one key when include_step=False.")
 
     def format_value(value: Any) -> str:
-        if isinstance(value, torch.Tensor) and value.numel() == 1:
-            return f"{float(value.detach().cpu().item()):.{precision}f}"
-        if isinstance(value, bool):
-            return str(value)
-        if isinstance(value, (int, float)):
-            return f"{float(value):.{precision}f}"
-        return str(value)
+        match value:
+            case torch.Tensor() as tensor if tensor.numel() == 1:
+                return f"{float(tensor.detach().cpu().item()):.{precision}f}"
+            case bool() as boolean:
+                return str(boolean)
+            case int() | float() as number:
+                return f"{float(number):.{precision}f}"
+            case _:
+                return str(value)
 
     def callback(event: dict[str, Any]) -> None:
         parts: list[str] = []
