@@ -130,14 +130,15 @@ for event in events:
 `min_delta` to ignore tiny noisy changes.
 
 ## Side effects
-Sometimes you want to log metrics (or write to an external system) without changing the stream. Use `tap(fn)`:
+Sometimes you want to log metrics (or write to an external system) without changing the stream.
+Use `tap(fn, every=...)` and the built-in `print_keys(...)` helper:
 ```python
-from fitstream import epoch_stream, pipe, tap, take
+from fitstream import epoch_stream, pipe, print_keys, tap, take
 
 events = pipe(
     epoch_stream(...),
-    tap(lambda ev: print(ev["step"], ev["train_loss"])),
-    take(10),
+    tap(print_keys("train_loss"), every=5),
+    take(20),
 )
 list(events)
 ```
