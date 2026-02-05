@@ -1,5 +1,5 @@
 
-.PHONY: sync test doc
+.PHONY: setup build test lint pre-commit doc doc-open
 
 setup:
 	uv sync --all-groups
@@ -19,3 +19,6 @@ pre-commit:
 
 doc:
 	uv run mkdocs build
+
+doc-open:
+	uv run mkdocs serve --open

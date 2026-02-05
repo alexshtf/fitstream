@@ -171,4 +171,5 @@ Full documentation is available at [https://fitstream.readthedocs.io/](https://f
 - Building is done via `uv build`.
 - Running tests is done via `make test`
 - Building documentation via `make doc`
+- Serving documentation locally (and opening it) via `make doc-open`
 - Linting via `make lint`
