@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from typing import Any
+from typing import Any, Literal
 import time
 
 import torch
@@ -108,8 +108,18 @@ def tick(
 def early_stop(
     key: str,
     patience: int,
+    *,
+    mode: Literal["min", "max"] = "min",
+    min_delta: float = 0.0,
 ) -> Transform:
     """Yield events until the metric stops improving for `patience` steps.
+
+    Args:
+        key: Event key containing the monitored metric.
+        patience: Number of consecutive non-improving events tolerated before stopping.
+        mode: Improvement direction. ``"min"`` means lower is better, ``"max"`` means
+            higher is better.
+        min_delta: Minimum absolute change required to count as an improvement.
 
     Use as a pipe stage:
 
@@ -117,13 +127,24 @@ def early_stop(
     """
     if patience < 1:
         raise ValueError("patience must be >= 1.")
+    if mode not in {"min", "max"}:
+        raise ValueError("mode must be one of {'min', 'max'}.")
+    if min_delta < 0.0:
+        raise ValueError("min_delta must be >= 0.")
 
     def apply(stream: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
-        best = float("inf")
+        best: float | None = None
         bad = 0
         for event in stream:
             value = float(event[key])
-            if value < best:
+            if best is None:
+                improved = True
+            elif mode == "min":
+                improved = value < (best - min_delta)
+            else:
+                improved = value > (best + min_delta)
+
+            if improved:
                 best = value
                 bad = 0
             else:
