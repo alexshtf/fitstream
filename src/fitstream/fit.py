@@ -77,17 +77,78 @@ def take(n: int) -> Transform:
 
 def tap(
     fn: Callable[[dict[str, Any]], Any],
+    *,
+    every: int = 1,
+    start: int = 1,
 ) -> Transform:
-    """Create a stage that performs side effects and yields events unchanged."""
+    """Create a stage that performs side effects and yields events unchanged.
+
+    Args:
+        fn: Callback applied to selected events.
+        every: Call ``fn`` every N events (event-count based).
+        start: 1-based event index at which callback scheduling starts.
+    """
     if not callable(fn):
         raise TypeError("tap requires a callable.")
+    if every < 1:
+        raise ValueError("every must be >= 1.")
+    if start < 1:
+        raise ValueError("start must be >= 1.")
 
     def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
-        for event in events:
-            fn(event)
+        for index, event in enumerate(events, start=1):
+            if index >= start and (index - start) % every == 0:
+                fn(event)
             yield event
 
     return stage
+
+
+def print_keys(
+    *keys: str,
+    precision: int = 4,
+    include_step: bool = True,
+    step_key: str = "step",
+) -> Callable[[dict[str, Any]], None]:
+    """Create an event callback that prints selected keys in one compact line.
+
+    Args:
+        *keys: Event keys to print.
+        precision: Number of digits after the decimal for numeric values.
+        include_step: Whether to include ``step_key`` first when present.
+        step_key: Event key used for the step prefix.
+    """
+    if precision < 0:
+        raise ValueError("precision must be >= 0.")
+    if not keys and not include_step:
+        raise ValueError("Provide at least one key when include_step=False.")
+
+    def format_value(value: Any) -> str:
+        match value:
+            case torch.Tensor() as tensor if tensor.numel() == 1:
+                return f"{float(tensor.detach().cpu().item()):.{precision}f}"
+            case bool() as boolean:
+                return str(boolean)
+            case int() | float() as number:
+                return f"{float(number):.{precision}f}"
+            case _:
+                return str(value)
+
+    def callback(event: dict[str, Any]) -> None:
+        parts: list[str] = []
+        if include_step and step_key in event:
+            try:
+                parts.append(f"{step_key}={int(event[step_key]):04d}")
+            except Exception:
+                parts.append(f"{step_key}={event[step_key]}")
+        for key in keys:
+            if key in event:
+                parts.append(f"{key}={format_value(event[key])}")
+            else:
+                parts.append(f"{key}=NA")
+        print(" ".join(parts))
+
+    return callback
 
 
 def tick(
@@ -101,6 +162,47 @@ def tick(
         for event in events:
             fn()
             yield event
+
+    return stage
+
+
+def ema(
+    key: str,
+    *,
+    decay: float | None = None,
+    half_life: float | None = None,
+    out_key: str | None = None,
+    bias_correction: bool = True,
+) -> Transform:
+    """Create a stage that adds an exponential moving average of ``key``.
+
+    Exactly one of ``decay`` or ``half_life`` must be provided.
+    The update rule is ``m = decay * m + (1 - decay) * x`` with ``m`` initialized to 0.
+    """
+    if (decay is None) == (half_life is None):
+        raise ValueError("Provide exactly one of decay or half_life.")
+    if half_life is not None:
+        if half_life <= 0.0:
+            raise ValueError("half_life must be > 0.")
+        decay = 2.0 ** (-1.0 / half_life)
+    assert decay is not None
+    if not (0.0 < decay < 1.0):
+        raise ValueError("decay must be in (0, 1).")
+
+    output_key = out_key or f"{key}_ema"
+
+    def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
+        aggregate = 0.0
+        t = 0
+        for event in events:
+            t += 1
+            value = float(event[key])
+            aggregate = decay * aggregate + (1.0 - decay) * value
+            if bias_correction:
+                smoothed = aggregate / (1.0 - (decay**t))
+            else:
+                smoothed = aggregate
+            yield event | {output_key: smoothed}
 
     return stage
 

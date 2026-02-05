@@ -344,20 +344,20 @@ across events:
 
 ### 7.1 Quick side effects with `tap(...)`
 
-FitStream includes a small helper for side effects: `tap(fn)` calls `fn(event)` and yields the event unchanged.
-It’s perfect for lightweight logging or writing metrics to an external system.
+FitStream includes a small helper for side effects: `tap(fn, every=...)` calls `fn(event)` every N events and yields
+the event unchanged. It’s perfect for lightweight logging or writing metrics to an external system.
 
 ```python
-from fitstream import augment, epoch_stream, pipe, take, tap, validation_loss
+from fitstream import augment, epoch_stream, pipe, print_keys, take, tap, validation_loss
 
 events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
     augment(validation_loss((x_val, y_val), loss_fn)),
-    tap(lambda event: print(f"epoch={event['step']:03d} val_loss={event['val_loss']:.4f}")),
+    tap(print_keys("train_loss", "val_loss"), every=5),
 )
 
 # Consume a few events to actually run it (streams are lazy).
-list(take(5)(events))
+list(take(15)(events))
 ```
 
 ### 7.2 Learning rate scheduling with `tick(...)`
@@ -390,48 +390,49 @@ If your scheduler needs a metric (e.g. `ReduceLROnPlateau`), use `tap(...)` inst
 
 ### 7.3 Example: exponential moving average (EMA)
 
-This stage adds a new key like `val_loss_ema` to each event.
+FitStream includes an `ema(...)` stage that adds a new key like `val_loss_ema` to each event.
 
 ```python
-from collections.abc import Iterable
-from typing import Any
+from fitstream import augment, ema, epoch_stream, pipe
 
-def ema(key: str, *, alpha: float = 0.2, out_key: str | None = None):
-    if not (0.0 < alpha <= 1.0):
-        raise ValueError("alpha must be in (0, 1].")
-    out_key = out_key or f"{key}_ema"
+# Coefficient form: m = decay * m + (1 - decay) * x
+events = pipe(
+    epoch_stream(...),
+    augment(...),
+    ema("val_loss", decay=0.9),
+)
 
-    def stage(events: Iterable[dict[str, Any]]):
-        value_ema: float | None = None
-        for event in events:
-            value = float(event[key])
-            value_ema = value if value_ema is None else (1.0 - alpha) * value_ema + alpha * value
-            yield event | {out_key: value_ema}
-
-    return stage
+# Half-life form (more intuitive tuning in "events until ~50% influence")
+events = pipe(
+    epoch_stream(...),
+    augment(...),
+    ema("val_loss", half_life=10),
+)
 ```
 
-### 7.4 Example: print progress every N epochs
+`ema(..., bias_correction=True)` is the default (Adam-style correction). You can disable it:
 
 ```python
-from collections.abc import Iterable
-from typing import Any
+from fitstream import augment, ema, epoch_stream, pipe
 
-def print_every(n: int, *, keys: tuple[str, ...] = ("train_loss", "val_loss")):
-    if n <= 0:
-        raise ValueError("n must be >= 1.")
+events = pipe(
+    epoch_stream(...),
+    augment(...),
+    ema("val_loss", half_life=10, bias_correction=False),
+)
+```
 
-    def stage(events: Iterable[dict[str, Any]]):
-        for event in events:
-            if int(event["step"]) % n == 0:
-                parts = [f"epoch={event['step']:04d}"]
-                for k in keys:
-                    if k in event:
-                        parts.append(f"{k}={float(event[k]):.4f}")
-                print(" ".join(parts))
-            yield event
+### 7.4 Combine smoothing + periodic logging
 
-    return stage
+```python
+from fitstream import augment, ema, epoch_stream, pipe, print_keys, tap
+
+events = pipe(
+    epoch_stream(...),
+    augment(...),
+    ema("val_loss", half_life=10),
+    tap(print_keys("train_loss", "val_loss", "val_loss_ema"), every=10),
+)
 ```
 
 ## 8) The “zero → hero” pipeline (put it all together)
@@ -453,7 +454,18 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from fitstream import augment, collect_jsonl, early_stop, epoch_stream, pipe, take, validation_loss
+from fitstream import (
+    augment,
+    collect_jsonl,
+    early_stop,
+    ema,
+    epoch_stream,
+    pipe,
+    print_keys,
+    take,
+    tap,
+    validation_loss,
+)
 
 RUNS_DIR = Path("runs")
 RUNS_DIR.mkdir(exist_ok=True)
@@ -472,8 +484,8 @@ events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
     augment(validation_loss((x_val, y_val), loss_fn)),
     augment(model_param_norm),
-    ema("val_loss", alpha=0.2),
-    print_every(10, keys=("train_loss", "val_loss", "val_loss_ema", "param_l2")),
+    ema("val_loss", half_life=10),
+    tap(print_keys("train_loss", "val_loss", "val_loss_ema", "param_l2"), every=10),
     take(500),
     early_stop(key="val_loss", patience=20, mode="min", min_delta=1e-4),
 )
