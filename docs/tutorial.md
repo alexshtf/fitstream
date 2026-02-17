@@ -231,7 +231,7 @@ What just happened?
 ## 5) Stop automatically with `early_stop`
 
 `epoch_stream` is infinite by design, so you need a stop condition. The simplest is `take(...)`.
-The more “ML-ish” approach is early stopping on validation loss. In practice, it’s common to use both: `take(max_epochs)`
+The more "ML-ish" approach is early stopping on validation loss. In practice, it’s common to use both: `take(max_epochs)`
 as a safety cap plus `early_stop(...)` to stop early.
 
 ```python
@@ -435,7 +435,7 @@ events = pipe(
 )
 ```
 
-## 8) The “zero → hero” pipeline (put it all together)
+## 8) The “zero -> hero” pipeline (put it all together)
 
 Here’s a complete training script with:
 
@@ -493,10 +493,3 @@ events = pipe(
 # Write the whole training history to disk (one JSON object per line).
 collect_jsonl(events, RUNS_DIR / "california_housing.jsonl")
 ```
-
-## 9) Next steps
-
-- Use a **true train/val/test** split (here we used the provided “test” split as validation for simplicity).
-- Add a `checkpoint_best(...)` stage that saves `event["model"].state_dict()` when `val_loss` improves.
-- Replace full-dataset validation with a batched validation pass if your validation set is large.
-- Use `collect_pd(...)` to turn your event history into a DataFrame for plotting/analysis.
