@@ -268,6 +268,7 @@ def epoch_stream(
     shuffle: bool = True,
     last_label: bool = True,
     generator: torch.Generator | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> Iterator[Event]:
     """Yield per-epoch training events from in-memory tensors.
 
@@ -284,6 +285,7 @@ def epoch_stream(
         last_label: Whether the last tensor in ``train_data`` is the label tensor.
         generator: Optional torch.Generator forwarded to ``iter_batches`` for reproducible
             shuffling.
+        extra: Optional dict to be added to each event.
 
     Notes:
         This function assumes the model and all tensors are already on the same device.
@@ -295,6 +297,7 @@ def epoch_stream(
         raise ValueError("train_data must contain at least one tensor.")
     if last_label and len(train_data) < 2:
         raise ValueError("last_label=True requires at least two tensors (inputs and labels).")
+    extra = extra or {}
 
     step = 0
     while True:
@@ -328,4 +331,5 @@ def epoch_stream(
             step=step,
             train_loss=epoch_loss,
             train_time_sec=time.perf_counter() - epoch_start,
+            **extra,
         )
