@@ -139,6 +139,19 @@ print(history[-1])
 # {'step': 50, 'train_loss': 0.23, 'train_time_sec': 0.01}
 ```
 
+When writing to sinks like `collect_jsonl(...)`, make sure event fields are JSON-serializable. If your stream includes
+runtime-only objects in extra fields, use `include` or `exclude` to control what gets saved:
+
+```python
+from fitstream import collect_jsonl
+
+# Safer for persisted logs: keep only metrics you want on disk.
+collect_jsonl(events, "runs/train.jsonl", include=["step", "train_loss", "val_loss", "lr"])
+
+# Alternative: drop known runtime-only keys.
+collect_jsonl(events, "runs/train.jsonl", exclude=["runtime_state"])
+```
+
 ## 3) Level up: use all features (and normalize)
 
 Using only `median_income` is a nice “hello world”, but we can do much better with all available numeric features.
@@ -388,7 +401,35 @@ for ev in events:
 
 If your scheduler needs a metric (e.g. `ReduceLROnPlateau`), use `tap(...)` instead so you can pass `event["val_loss"]`.
 
-### 7.3 Example: exponential moving average (EMA)
+### 7.3 Another scheduler pattern: pass state via `extra`
+
+You can also attach runtime state to every event using `extra=...` and then consume it in downstream stages. This is
+useful when a `tap(...)` callback should read objects directly from the event stream.
+
+```python
+from torch.optim.lr_scheduler import LinearLR
+from fitstream import augment, epoch_stream, pipe, take, tap
+
+scheduler = LinearLR(optimizer, start_factor=0.1, end_factor=1.0, total_iters=10)
+
+events = pipe(
+    epoch_stream(
+        (x_train, y_train),
+        model,
+        optimizer,
+        loss_fn,
+        batch_size=512,
+        shuffle=True,
+        extra={"scheduler": scheduler},
+    ),
+    tap(lambda ev: ev["scheduler"].step()),
+    take(50),
+)
+```
+
+If you write events to JSON sinks, remember to include/exclude non-serializable fields like `scheduler`.
+
+### 7.4 Example: exponential moving average (EMA)
 
 FitStream includes an `ema(...)` stage that adds a new key like `val_loss_ema` to each event.
 
@@ -422,7 +463,7 @@ events = pipe(
 )
 ```
 
-### 7.4 Combine smoothing + periodic logging
+### 7.5 Combine smoothing + periodic logging
 
 ```python
 from fitstream import augment, ema, epoch_stream, pipe, print_keys, tap

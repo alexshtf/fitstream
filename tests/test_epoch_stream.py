@@ -53,3 +53,21 @@ def test_epoch_stream_last_label_false_uses_all_inputs() -> None:
 
     expected = (x + y).mean().item()
     assert event["train_loss"] == pytest.approx(expected)
+
+
+def test_epoch_stream_appends_extra_fields_to_each_event() -> None:
+    x = torch.tensor([[1.0], [2.0], [3.0], [4.0]])
+    y = torch.tensor([[1.0], [2.0], [3.0], [4.0]])
+    model = nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
+
+    extra = {"run_id": "test-run", "seed": 123}
+    stream = epoch_stream((x, y), model, optimizer, nn.MSELoss(), batch_size=2, shuffle=False, extra=extra)
+
+    event1 = next(stream)
+    event2 = next(stream)
+
+    assert event1["run_id"] == "test-run"
+    assert event1["seed"] == 123
+    assert event2["run_id"] == "test-run"
+    assert event2["seed"] == 123
