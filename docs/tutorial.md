@@ -422,7 +422,6 @@ events = pipe(
         shuffle=True,
         extra={"scheduler": scheduler},
     ),
-    augment(lambda ev: {"lr": optimizer.param_groups[0]["lr"]}),
     tap(lambda ev: ev["scheduler"].step()),
     take(50),
 )
