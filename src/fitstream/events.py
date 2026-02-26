@@ -6,11 +6,8 @@ from torch import nn
 class Event(dict[str, Any]):
     """Per-epoch event emitted by fit/stream utilities.
 
-    Keys:
-        model: Live model reference updated each epoch.
-        step: 1-based epoch index.
-        train_loss: Mean training loss for the epoch.
-        train_time_sec: Wall-clock seconds spent in the epoch.
+    This is a regular dict with some overloads which exists solely to
+    as a hint for users and IDE autocomplete engines what to expect.
     """
 
     @overload
