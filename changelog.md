@@ -1,14 +1,31 @@
 # Changelog
 
-This release includes changes from `v0.1.1` to `72db3be` (`master`).
+This changelog is organized by the repository's Git tags.
 
-## Added
+## v0.3.0 (2026-02-26)
+
+Changes since `v0.2.0`.
+
+### Added
+- Open `Event` typing for stream events.
+- Extra-field coverage for event payloads in tests.
+
+### Changed
+- Tutorial updates to reflect open `Event` typing and event payload usage.
+- Clarified event-related docstrings and removed redundant tutorial text.
+- General documentation fixes.
+
+## v0.2.0 (2026-02-06)
+
+Changes since `v0.1.1`.
+
+### Added
 - `ema(...)` stream stage for metric smoothing in `src/fitstream/fit.py`.
 - `print_keys(...)` callback helper for compact metric logging in `src/fitstream/fit.py`.
 - `doc-open` make target (`mkdocs serve --open`) in `Makefile`.
 - `context7.json` metadata for Context7 docs integration.
 
-## Changed
+### Changed
 - `tap(...)` now supports optional scheduling controls:
   - `every` (run callback every N events)
   - `start` (1-based start index)
@@ -22,13 +39,20 @@ This release includes changes from `v0.1.1` to `72db3be` (`master`).
   - explicit early-stop settings (`mode`, `min_delta`)
 - Added project badges to `README.md`.
 
-## Tests
-- Added EMA coverage: `tests/test_ema.py`.
-- Added `print_keys` coverage: `tests/test_print_keys.py`.
-- Expanded `tap` coverage for `every`/`start`: `tests/test_tap.py`.
-- Expanded `early_stop` coverage for `mode`/`min_delta`: `tests/test_early_stop.py`.
-
-## Compatibility Notes
+### Compatibility Notes
 - Existing `tap(fn)` usage remains valid (new arguments are optional).
 - Existing `early_stop(key, patience)` usage remains valid with defaults.
 - `ema(...)` requires exactly one of `decay` or `half_life`.
+
+## v0.1.1 (2026-02-03)
+
+Initial tagged release.
+
+### Added
+- Core stream primitives: `epoch_stream(...)`, `augment(...)`, `pipe(...)`, `take(...)`, `tap(...)`, `tick(...)`, `early_stop(...)`, and sink helpers.
+- Project setup: packaging metadata, `Makefile`, CI workflow, MkDocs docs, and Read the Docs config.
+- Apache 2.0 license and initial docs/tests coverage.
+
+### Changed
+- Made `augment(...)`, `take(...)`, and `early_stop(...)` curried/pipe-friendly.
+- Improved typing/package metadata and fixed early README/docs issues.

@@ -1,9 +1,7 @@
-from __future__ import annotations
-
+import json
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, TextIO
-import json
 
 
 def _filter_event(
