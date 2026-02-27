@@ -1,8 +1,6 @@
-from __future__ import annotations
-
+import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import Any, Literal
-import time
 
 import torch
 from torch import nn
