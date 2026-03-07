@@ -60,3 +60,7 @@ Issues = "https://github.com/alexshtf/fitstream/issues"
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
+testpaths = ["tests", "src"]

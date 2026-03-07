@@ -371,7 +371,7 @@ def epoch_stream(
         >>> y = torch.tensor([[1.0], [2.0]])
         >>> model = nn.Linear(1, 1, bias=False)
         >>> with torch.no_grad():
-        ...     model.weight.zero_()
+        ...     _ = model.weight.zero_()
         >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
         >>> stream = epoch_stream((x, y), model, optimizer, nn.MSELoss(), batch_size=2, shuffle=False)
         >>> event = next(stream)

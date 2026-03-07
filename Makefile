@@ -8,7 +8,7 @@ build:
 	uv build
 
 test:
-	uv run pytest tests
+	uv run pytest
 
 lint:
 	uv run ruff check .

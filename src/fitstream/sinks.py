@@ -17,9 +17,7 @@ def _filter_event(
         if exclude is not None:
             excluded.update(exclude)
         return {k: v for k, v in event.items() if k not in excluded}
-    included = set(include)
-    included.discard("model")
-    return {k: event[k] for k in included if k in event}
+    return {k: event[k] for k in include if k != "model" and k in event}
 
 
 def collect(
