@@ -1,11 +1,14 @@
-from typing import Iterable, Sequence
+from typing import Iterable
 
 import torch
 
 
 def iter_batches(
-    *tensors, batch_size: int = 1, shuffle: bool = True, generator: torch.Generator | None = None
-) -> Iterable[Sequence[torch.Tensor]]:
+    *tensors: torch.Tensor,
+    batch_size: int = 1,
+    shuffle: bool = True,
+    generator: torch.Generator | None = None,
+) -> Iterable[tuple[torch.Tensor, ...]]:
     """Yields batches from tensors, optionally shuffled.
 
     Args:
@@ -19,6 +22,14 @@ def iter_batches(
 
     Yields:
         Tuples of tensors, one per input tensor, representing a batch.
+
+    Example:
+        >>> features = torch.arange(12).reshape(6, 2)
+        >>> targets = torch.arange(6)
+        >>> batches = iter_batches(features, targets, batch_size=4, shuffle=False)
+        >>> x_batch, y_batch = next(batches)
+        >>> x_batch.shape, y_batch.shape
+        (torch.Size([4, 2]), torch.Size([4]))
 
     Notes:
         This function assumes all tensors have the same number of samples along dimension 0
