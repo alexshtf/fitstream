@@ -1,3 +1,5 @@
+from typing import cast
+
 import torch
 import pytest
 from torch import nn
@@ -71,3 +73,30 @@ def test_epoch_stream_appends_extra_fields_to_each_event() -> None:
     assert event1["seed"] == 123
     assert event2["run_id"] == "test-run"
     assert event2["seed"] == 123
+
+
+def test_epoch_stream_applies_step_offset() -> None:
+    x = torch.tensor([[1.0], [2.0], [3.0], [4.0]])
+    y = torch.tensor([[1.0], [2.0], [3.0], [4.0]])
+    model = nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
+
+    stream = epoch_stream((x, y), model, optimizer, nn.MSELoss(), batch_size=2, shuffle=False, step_offset=10)
+
+    event1 = next(stream)
+    event2 = next(stream)
+
+    assert event1["step"] == 11
+    assert event2["step"] == 12
+
+
+def test_epoch_stream_rejects_non_integer_step_offset() -> None:
+    x = torch.tensor([[1.0], [2.0]])
+    y = torch.tensor([[1.0], [2.0]])
+    model = nn.Linear(1, 1)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.0)
+
+    stream = epoch_stream((x, y), model, optimizer, nn.MSELoss(), step_offset=cast(int, 1.5))
+
+    with pytest.raises(TypeError, match="step_offset must be an integer"):
+        next(stream)

@@ -2,6 +2,17 @@
 
 This changelog is organized by the repository's Git tags.
 
+## v0.3.1 (2026-04-02)
+
+Changes since `v0.3.0`.
+
+### Added
+- `epoch_stream(..., step_offset=...)` to offset emitted step numbers without changing the default `step=1, 2, ...` behavior.
+
+### Changed
+- Updated `epoch_stream(...)` docstrings and tutorial text to document step offsets.
+- Added test coverage for offset step numbering and invalid `step_offset` values.
+
 ## v0.3.0 (2026-02-26)
 
 Changes since `v0.2.0`.

@@ -348,6 +348,7 @@ def epoch_stream(
     last_label: bool = True,
     generator: torch.Generator | None = None,
     extra: dict[str, Any] | None = None,
+    step_offset: int = 0,
 ) -> Iterator[Event]:
     """Yield per-epoch training events from in-memory tensors.
 
@@ -365,6 +366,9 @@ def epoch_stream(
         generator: Optional torch.Generator forwarded to ``iter_batches`` for reproducible
             shuffling.
         extra: Optional dict to be added to each event.
+        step_offset: Integer added to the default 1-based epoch index in emitted events.
+            With ``step_offset=0`` the first event has ``step=1``; with
+            ``step_offset=10`` the first event has ``step=11``.
 
     Example:
         >>> x = torch.tensor([[1.0], [2.0]])
@@ -389,9 +393,11 @@ def epoch_stream(
         raise ValueError("train_data must contain at least one tensor.")
     if last_label and len(train_data) < 2:
         raise ValueError("last_label=True requires at least two tensors (inputs and labels).")
+    if not isinstance(step_offset, int):
+        raise TypeError("step_offset must be an integer.")
     extra = extra or {}
 
-    step = 0
+    step = step_offset
     while True:
         model.train()
         epoch_start = time.perf_counter()
