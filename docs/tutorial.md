@@ -104,6 +104,9 @@ loss_fn = nn.MSELoss()
 `epoch_stream(...)` is FitStream’s main entry point. It yields one event **per epoch** forever, so we’ll stop it using
 FitStream’s `take(...)` helper.
 
+The emitted `step` value starts at `1` by default. If you need numbering to continue from an earlier run, pass
+`step_offset=...` and FitStream will add that offset to each emitted step.
+
 ```python
 from fitstream import epoch_stream, take
 
