@@ -1,4 +1,4 @@
-# FitStream
+# FitStream (for PyTorch)
 A tiny library to make PyTorch experiment easy for small models and in-memory datasets.
 
 <div align="center">
