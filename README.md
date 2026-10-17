@@ -1,5 +1,9 @@
 # FitStream (for PyTorch)
-A tiny library to make PyTorch experiment easy for small models and in-memory datasets.
+
+**Compose PyTorch training through ordinary Python iterators.**
+
+For experiments with small PyTorch models and in-memory datasets: change metrics and stopping rules without rewriting
+your training loop. Keep your existing model and train with a `for` loop.
 
 <div align="center">
 
@@ -10,8 +14,34 @@ A tiny library to make PyTorch experiment easy for small models and in-memory da
 
 </div>
 
+## Training as an iterator
+
+Each iteration trains one epoch and yields its results. FitStream's utilities take an iterator and return another,
+adding validation or stopping rules along the way. Chain them together with `pipe(...)`:
+
+```python
+from fitstream import augment, early_stop, epoch_stream, pipe, take, validation_loss
+
+# Use your tensors, model, loss function, and optimizer.
+events = pipe(
+    epoch_stream((X, y), model, optimizer, loss, batch_size=32, shuffle=True),
+    augment(validation_loss((X_val, y_val), loss)),  # add validation loss to each event
+    take(500),                                    # limit the event stream
+    early_stop(key="val_loss", patience=10),       # stop when validation loss stalls
+)
+
+# Training happens as you iterate.
+for event in events:
+    print(f"step={event['step']}, train={event['train_loss']}, val={event['val_loss']}")
+```
+
+`events` is an ordinary Python iterator. Each event is a dictionary with the epoch number (`step`), model, and losses.
+The chain of utilities above forms a pipeline. Use `break` to stop, collect metrics in a list, or add your own generator
+to the chain.
+
 # Getting started
-Using `uv`
+
+Using `uv`:
 ```shell
 uv add fitstream
 ```
@@ -21,30 +51,12 @@ Using `pip`:
 pip install fitstream
 ```
 
-Training a model:
-```python
-from torch.optim import Adam
-
-from fitstream import epoch_stream, take # epoch_stream is the main entry point
-
-X, y = get_data()
-model = get_model()
-loss = get_loss()
-optimizer = Adam(model.parameters())
-
-# an infinite stream of training epochs (limit it with `take` or `early_stop`)
-events = epoch_stream((X, y), model, optimizer, loss, batch_size=32, shuffle=True)
-for event in take(10)(events):
-    print(f"step={event['step']}, loss={event['train_loss']}")
-# epoch=1, loss=...
-# epoch=2, loss=...
-# ...
-```
-
 # Basics
-The core idea of the library is "training loop as a stream of events".  The `epoch_stream` is just an iterable over 
-dictionaries comprising of the epoch, the model, and the training loss. Everything we do is transforming or enriching
-these events. FitStream provides a small `pipe(...)` helper to compose transformations left-to-right.
+
+The following building blocks enrich, select, observe, and collect events. Each stream transform accepts an iterable
+and returns an iterable, so you can combine them with `pipe(...)` or call them directly.
+`pipe(stream, first, second)` is simply `second(first(stream))`. The built-in stages are lazy: constructing a pipeline
+does not train the model; consuming it does.
 
 ## Augmentation
 The `augment` function turns an "augmenter" (a function that looks at an event and returns extra keys) into a stream
