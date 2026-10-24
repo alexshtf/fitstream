@@ -1,5 +1,6 @@
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
+from itertools import islice
 from typing import Any, Literal
 
 import torch
@@ -77,6 +78,9 @@ def augment(
 def take(n: int) -> Transform:
     """Limit an event stream to the first ``n`` events.
 
+    Events are pulled lazily, without consuming beyond the limit. With ``n=0``,
+    the input stream is never advanced.
+
     Can be used directly on a stream or as a pipe stage:
 
     - ``take(10)(events)``
@@ -86,12 +90,7 @@ def take(n: int) -> Transform:
         raise ValueError("n must be >= 0.")
 
     def stage(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
-        count = 0
-        for event in events:
-            if count >= n:
-                break
-            yield event
-            count += 1
+        yield from islice(events, n)
 
     return stage
 
