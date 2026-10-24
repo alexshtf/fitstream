@@ -6,6 +6,9 @@ on:
   push:
     branches: [master]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -20,55 +23,43 @@ jobs:
         python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v3
-        with:
           enable-cache: true
       - name: Install dependencies
-        run: make setup
+        run: uv sync --locked
       - name: Run tests
-        run: make test
-      - name: Run lint
-        run: make lint
+        run: uv run --locked pytest
 
-  build-package:
-    name: Build package (py${{ matrix.python-version }})
+  build:
+    name: Lint, package, and documentation
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
-          python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v3
-        with:
+          python-version: "3.12"
           enable-cache: true
       - name: Install dependencies
-        run: make setup
+        run: uv sync --locked
+      - name: Lint and type check
+        run: |
+          uv run --locked ruff check .
+          uv run --locked pyright src scripts
       - name: Build sdist/wheel
-        run: make build
-
-  build-docs:
-    name: Build docs (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.12", "3.13", "3.14"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+        run: uv build --no-sources
+      - name: Archive package
+        uses: actions/upload-artifact@v4
         with:
-          python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-      - name: Install dependencies
-        run: make setup
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
       - name: Build docs
-        run: make doc
+        run: uv run --locked mkdocs build
+      - name: Archive documentation
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs
+          path: site/
+          if-no-files-found: error
