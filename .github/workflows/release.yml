@@ -1,0 +1,145 @@
+name: Release
+run-name: Release ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (for example 0.4.0 or v0.4.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Prepare, validate, and build release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.prepare.outputs.version }}
+      tag: ${{ steps.prepare.outputs.tag }}
+      prerelease: ${{ steps.prepare.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+      - name: Check release prerequisites
+        env:
+          HAS_RELEASE_KEY: ${{ secrets.RELEASE_DEPLOY_KEY != '' }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/master" ]; then
+            echo "Run this workflow from master." >&2
+            exit 1
+          fi
+          if [ "$HAS_RELEASE_KEY" != "true" ]; then
+            echo "Configure the RELEASE_DEPLOY_KEY secret before releasing." >&2
+            exit 1
+          fi
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Prepare release version and notes
+        id: prepare
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+        run: uv run --locked python scripts/prepare_release.py
+      - name: Validate release
+        run: |
+          uv run --locked ruff check .
+          uv run --locked pyright src scripts
+          uv run --locked pytest
+          uv run --locked mkdocs build
+      - name: Build package
+        run: uv build --no-sources
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+      - name: Upload versioned metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: |
+            pyproject.toml
+            uv.lock
+            changelog.md
+            release-notes.md
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/fitstream/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
+
+  finalize:
+    name: Commit version, tag, and create GitHub release
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          path: .
+      - name: Commit and push release version and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "git@github.com:$GITHUB_REPOSITORY.git"
+          git add pyproject.toml uv.lock changelog.md
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            # A retry must refer to the same source and versioned metadata.
+            git diff --exit-code "$TAG" -- .
+          else
+            if ! git diff --cached --quiet; then
+              git commit -m "Release $VERSION"
+            fi
+            git tag -a "$TAG" -m "Release $VERSION"
+            git push --atomic origin HEAD:master "$TAG"
+          fi
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            exit 0
+          fi
+          args=(--verify-tag --title "$TAG" --notes-file release-notes.md)
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$TAG" "${args[@]}"
