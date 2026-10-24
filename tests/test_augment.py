@@ -4,7 +4,7 @@ import torch
 import pytest
 from torch import nn
 
-from fitstream import augment, validation_loss
+from fitstream import augment, evaluate, validation_loss
 
 
 def test_augment_merges_dicts() -> None:
@@ -18,6 +18,48 @@ def test_augment_merges_dicts() -> None:
     assert augmented[0]["double_step"] == 2
     assert augmented[1]["double_step"] == 4
     assert events[0] == {"step": 1, "train_loss": 0.5}
+
+
+@pytest.mark.parametrize("training", [True, False])
+def test_evaluate_shares_one_forward_pass_and_returns_floats(training: bool) -> None:
+    class CountingModel(nn.Module):
+        calls = 0
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            self.calls += 1
+            assert not self.training
+            assert not torch.is_grad_enabled()
+            return 2 * x
+
+    x = torch.tensor([[1.0], [2.0]], requires_grad=True)
+    y = torch.tensor([[0.0], [1.0]])
+    model = CountingModel().train(training)
+    predictions: list[torch.Tensor] = []
+
+    def mse(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        assert not torch.is_grad_enabled()
+        assert target is y
+        predictions.append(pred)
+        return (pred - target).square().mean()
+
+    def mae(pred: torch.Tensor, target: torch.Tensor) -> float:
+        assert not torch.is_grad_enabled()
+        assert target is y
+        predictions.append(pred)
+        return (pred - target).abs().mean().item()
+
+    event = {"model": model, "step": 1}
+    events = augment(evaluate((x, y), metrics={"val_loss": mse, "val_mae": mae}))([event])
+    assert model.calls == 0
+    result = list(events)[0]
+
+    assert model.calls == 1
+    assert predictions[0] is predictions[1]
+    assert not predictions[0].requires_grad
+    assert result == {**event, "val_loss": 6.5, "val_mae": 2.5}
+    assert isinstance(result["val_loss"], float) and isinstance(result["val_mae"], float)
+    assert model.training is training
+    assert event == {"model": model, "step": 1}
 
 
 def test_validation_loss_uses_event_model() -> None:
