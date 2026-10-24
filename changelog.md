@@ -2,6 +2,42 @@
 
 This changelog is organized by the repository's Git tags.
 
+## v0.4.0 (2026-10-24)
+
+Changes since `v0.3.1`.
+
+### Breaking changes
+
+- `take(n)` now consumes at most `n` upstream events. Previously, fully consuming
+  the limited stream fetched one additional event; `take(0)` also fetched an event.
+  With `epoch_stream`, this could train an extra epoch without yielding its metrics.
+  For example, fully consuming `take(10)(epoch_stream(...))` now trains 10 epochs
+  instead of 11, and `take(0)` performs no training.
+- If your code depended on that extra advancement, request the intended number of
+  events explicitly. Final model weights and upstream side effects may differ
+  from earlier versions even when the yielded event count is unchanged.
+
+### Added
+
+- `evaluate(val_data, *, metrics, last_label=True)` computes multiple named metrics
+  from one model forward pass. Use it with `augment` to add Python float values to
+  each event. It supports multiple model inputs and unlabeled data.
+- `best_model` and `BestModel` retain an independent snapshot of the best observed
+  model state. Use the tracker with `tap`, then call `load_into(model)` after
+  training. Both minimization and maximization are supported, with optional CPU
+  snapshot storage.
+- `fitstream.__version__` exposes the installed package version.
+
+### Changed
+
+- `validation_loss` delegates to `evaluate` while keeping its existing signature
+  and metric keys. Evaluation restores each module's previous training/evaluation
+  mode, including mixed modes and failures during inference or metric computation.
+- Updated the README and tutorial with best-model tracking and shared validation
+  metric examples.
+- Added an automated release workflow to validate and build the package, publish
+  to PyPI, update version metadata and the changelog, and create a GitHub release.
+
 ## v0.3.1 (2026-04-02)
 
 Changes since `v0.3.0`.
