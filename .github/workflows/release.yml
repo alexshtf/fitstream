@@ -41,7 +41,7 @@ jobs:
             echo "Configure the RELEASE_DEPLOY_KEY secret before releasing." >&2
             exit 1
           fi
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           python-version: "3.12"
           enable-cache: true
