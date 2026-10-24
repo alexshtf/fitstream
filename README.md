@@ -155,6 +155,32 @@ events = pipe(
 list(events)
 ```
 
+### Keeping the best model
+
+Use `best_model` with `tap` to keep the best observed state and load it into a model after training:
+
+```python
+import fitstream as fts
+
+best = fts.best_model("val_loss", device="cpu")
+events = fts.pipe(
+    fts.epoch_stream((X, y), model, optimizer, loss, batch_size=32),
+    fts.take(500),
+    fts.augment(fts.validation_loss((X_val, y_val), loss)),
+    fts.early_stop(key="val_loss", patience=10),
+    fts.tap(best),
+)
+for event in events:
+    print(event["step"], event["val_loss"])
+
+best.load_into(model)
+```
+
+The default `direction="min"` selects lower values; use `direction="max"` for metrics such as accuracy.
+Ties retain the earlier state. Create a new tracker for each run.
+With `device=None` (the default), snapshot tensors stay on their original devices; `device="cpu"` stores them on CPU.
+`load_into(model)` preserves the target model's parameter devices, dtypes, and training/evaluation mode.
+
 ## Sinks
 Iterating over events and doing something yourself can be tedious, so we have some utilities to help you process the
 event stream.

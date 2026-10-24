@@ -35,6 +35,10 @@ class BestModel:
         self._state: dict[str, Any] | None = None
 
     def __call__(self, event: dict[str, Any]) -> None:
+        """Observe an event containing ``model`` and the configured metric key.
+
+        Raises ``ValueError`` if the metric, converted to ``float``, is not finite.
+        """
         value = float(event[self._metric_key])
         if not isfinite(value):
             raise ValueError(f"Metric {self._metric_key!r} must be finite.")
@@ -44,7 +48,20 @@ class BestModel:
             self._best = value
 
     def load_into(self, model: nn.Module) -> None:
-        """Load the best saved state into ``model`` without sharing mutable extra state."""
+        """Load the best saved state into a compatible model.
+
+        Args:
+            model: Target whose parameters, buffers, and custom extra state are updated.
+
+        Raises:
+            RuntimeError: No snapshot exists, or PyTorch finds incompatible model state.
+
+        Notes:
+            Preserves the target's parameter objects, parameter/buffer devices and
+            dtypes, and training/evaluation mode. Optimizer and scheduler state are not included.
+            Loading temporarily copies the snapshot on its storage device(s) so mutable
+            extra state remains independent across repeated calls.
+        """
         if self._state is None:
             raise RuntimeError("No model state has been captured yet.")
         model.load_state_dict(deepcopy(self._state))
@@ -56,5 +73,28 @@ def best_model(
     direction: Literal["min", "max"] = "min",
     device: str | torch.device | None = None,
 ) -> BestModel:
-    """Create a best-model callback for ``tap`` with explicit ``load_into(model)``."""
+    """Keep the best observed model state with a callback for ``tap``.
+
+    Args:
+        metric_key: Event key containing a finite metric convertible to ``float``.
+        direction: ``"min"`` selects lower values; ``"max"`` selects higher values.
+        device: Storage device for snapshot tensor entries. ``None`` preserves each
+            tensor's device; ``"cpu"`` copies directly to CPU without an intermediate
+            GPU copy. Dtypes are preserved. Other extra state is deep-copied; the
+            device option does not recursively move tensors nested inside it.
+
+    Returns:
+        A stateful callable for ``tap``. Call ``load_into(model)`` on it to load the
+        saved parameters, buffers, and custom extra state into a compatible model.
+
+    Raises:
+        ValueError: ``direction`` is neither ``"min"`` nor ``"max"``.
+
+    Notes:
+        Keeps one snapshot, replacing it only on strict improvement; ties keep the
+        earlier snapshot. Place ``tap(best)`` after the metric is computed and consume
+        the stream before loading. Only events reaching the callback are considered.
+        Create a new tracker for each run. Loading is explicit and does not resume
+        optimizer or scheduler state.
+    """
     return BestModel(metric_key, direction, device)
