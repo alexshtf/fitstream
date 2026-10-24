@@ -4,6 +4,7 @@ import pytest
 import torch
 from torch import nn
 
+import fitstream as fts
 from fitstream.tracking import _snapshot_state
 
 
@@ -62,3 +63,23 @@ def test_snapshot_preserves_metadata_and_copies_extra_state() -> None:
     nn.Sequential(restored_child).load_state_dict(state)
     assert restored_child.info == {"labels": ["original"]}
     assert loaded_versions == [3]
+
+
+def test_best_model_tracks_and_restores_through_tap() -> None:
+    model = nn.Linear(1, 1, bias=False)
+    best = fts.best_model(metric_key="val_loss", direction="min")
+
+    def events():
+        for step, loss in enumerate([3.0, 1.0, 2.0], start=1):
+            with torch.no_grad():
+                model.weight.fill_(step)
+            yield {"model": model, "step": step, "val_loss": loss}
+
+    history = fts.collect(fts.pipe(events(), fts.tap(best)))
+    assert [event["val_loss"] for event in history] == [3.0, 1.0, 2.0]
+    assert model.weight.item() == 3.0
+
+    parameter = model.weight
+    best.restore(model)
+    assert model.weight is parameter
+    assert model.weight.item() == 2.0
