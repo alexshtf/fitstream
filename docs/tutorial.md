@@ -312,41 +312,36 @@ events = pipe(
 )
 ```
 
-### 6.2 Example: your own validation metric (MAE)
+### 6.2 Example: validation loss and MAE from shared predictions
 
-FitStream ships `validation_loss(...)`, but you can write any metric you want.
+Use `evaluate` to compute several named metrics from one model forward pass. Your metric functions receive
+the predictions and labels directly:
 
 ```python
 import torch
-from torch import nn
+import fitstream as fts
 
-def validation_mae(x_val: torch.Tensor, y_val: torch.Tensor, *, key: str = "val_mae"):
-    def compute(event: dict) -> dict[str, float]:
-        model = event["model"]
-        if not isinstance(model, nn.Module):
-            raise TypeError("Expected event['model'] to be a torch.nn.Module")
-
-        was_training = model.training
-        model.eval()
-        with torch.no_grad():
-            preds = model(x_val)
-            mae = (preds - y_val).abs().mean()
-        if was_training:
-            model.train()
-        return {key: mae.detach().cpu().item()}
-
-    return compute
+def mae(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    return (pred - target).abs().mean()
 ```
 
 Add it to the pipeline:
 
 ```python
-events = pipe(
-    epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
-    augment(validation_loss((x_val, y_val), loss_fn)),
-    augment(validation_mae(x_val, y_val)),
+events = fts.pipe(
+    fts.epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
+    fts.augment(
+        fts.evaluate((x_val, y_val), metrics={"val_loss": loss_fn, "val_mae": mae})
+    ),
+    fts.take(10),
 )
+
+for event in events:
+    print(event["step"], event["val_loss"], event["val_mae"])
 ```
+
+Each printed row now includes both validation loss and MAE, computed from the same predictions.
+FitStream handles PyTorch's evaluation setup: evaluation mode, no gradients, and restoring the previous modes afterward.
 
 ## 7) Become a bigger hero: write your own stream processor
 
