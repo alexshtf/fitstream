@@ -96,6 +96,28 @@ for event in events:
     print(f"step={event['step']}, val_loss={event['val_loss']}")
 ```
 
+For several validation metrics, use `evaluate` to share one forward pass:
+
+```python
+import fitstream as fts
+
+def accuracy(logits, labels):
+    return (logits.argmax(dim=-1) == labels).float().mean()
+
+events = fts.pipe(
+    fts.epoch_stream(...),
+    fts.augment(
+        fts.evaluate(
+            validation_set,
+            metrics={"val_loss": nn.CrossEntropyLoss(), "val_accuracy": accuracy},
+        )
+    ),
+)
+```
+
+Each metric receives the same predictions and labels and returns a single-element tensor or number.
+The supplied names become event keys, with Python float values. `validation_loss` remains a shortcut for one metric.
+
 We can, of course, augment the stream more than once:
 ```python
 events = pipe(

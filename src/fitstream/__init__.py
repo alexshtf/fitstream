@@ -14,7 +14,7 @@ from .fit import (
     tick as tick,
 )
 from .sinks import collect as collect, collect_jsonl as collect_jsonl, collect_pd as collect_pd
-from .augmentations import validation_loss as validation_loss
+from .augmentations import evaluate as evaluate, validation_loss as validation_loss
 from .tracking import BestModel as BestModel, best_model as best_model
 
 __version__ = _version("fitstream")
