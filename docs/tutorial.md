@@ -376,6 +376,32 @@ events = pipe(
 list(take(15)(events))
 ```
 
+#### Keeping the best model
+
+Use `best_model` with `tap` to keep the state with the lowest validation loss, then load it after training:
+
+```python
+from fitstream import best_model, collect, early_stop
+
+best = best_model("val_loss")
+events = pipe(
+    epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
+    take(500),
+    augment(validation_loss((x_val, y_val), loss_fn)),
+    early_stop(key="val_loss", patience=10, min_delta=1e-4),
+    tap(best),
+)
+
+history = collect(events)
+best.load_into(model)
+```
+
+If your model is on the GPU, you can store the best model state on the CPU to save GPU memory:
+
+```python
+best = best_model("val_loss", device="cpu")
+```
+
 ### 7.2 Learning rate scheduling with `tick(...)`
 
 If you have a `tick(fn)` stage (a no-argument cousin of `tap(...)` that calls `fn()` once per event), it’s a clean way
@@ -489,6 +515,7 @@ Here’s a complete training script with:
 - EMA smoothing of `val_loss`
 - periodic printing
 - early stopping
+- loading the best model state
 - max epoch cap (`take`)
 - saving results to JSONL
 
@@ -500,6 +527,7 @@ from torch import nn
 
 from fitstream import (
     augment,
+    best_model,
     collect_jsonl,
     early_stop,
     ema,
@@ -523,6 +551,7 @@ model = nn.Sequential(
 )
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 loss_fn = nn.MSELoss()
+best = best_model("val_loss", device="cpu")
 
 events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
@@ -532,8 +561,10 @@ events = pipe(
     tap(print_keys("train_loss", "val_loss", "val_loss_ema", "param_l2"), every=10),
     take(500),
     early_stop(key="val_loss", patience=20, mode="min", min_delta=1e-4),
+    tap(best),
 )
 
 # Write the whole training history to disk (one JSON object per line).
 collect_jsonl(events, RUNS_DIR / "california_housing.jsonl")
+best.load_into(model)
 ```
