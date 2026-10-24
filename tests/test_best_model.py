@@ -36,6 +36,7 @@ class _ExtraStateModel(nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
+        self.weight = nn.Parameter(torch.ones(1))
         self.info = {"labels": ["original"]}
 
     def get_extra_state(self):
@@ -139,3 +140,56 @@ def test_best_model_rejects_nonfinite_metrics_without_changing_snapshot(metric, 
     else:
         with pytest.raises(RuntimeError, match="No model state has been captured"):
             best.load_into(model)
+
+
+@pytest.mark.parametrize("snapshot_device", [None, "cpu"])
+@pytest.mark.parametrize(
+    "source_device",
+    ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable"))],
+)
+def test_best_model_snapshot_device_and_loading_preserve_target(source_device, snapshot_device) -> None:
+    model = nn.BatchNorm1d(2, device=source_device)
+    assert model.running_mean is not None
+    with torch.no_grad():
+        model.weight.fill_(3)
+        model.running_mean.fill_(4)
+    best = fts.best_model("score", device=snapshot_device)
+    best({"model": model, "score": 1.0})
+
+    target = nn.BatchNorm1d(2, device=source_device, dtype=torch.float64).eval()
+    parameter = target.weight
+    snapshot_devices: set[str] = set()
+
+    def record_devices(_module, state_dict, *_) -> None:
+        snapshot_devices.update(value.device.type for value in state_dict.values())
+
+    target.register_load_state_dict_pre_hook(record_devices)
+    best.load_into(target)
+
+    assert snapshot_devices == {snapshot_device or source_device}
+    assert target.weight is parameter
+    assert target.weight.device.type == source_device
+    assert target.weight.dtype == torch.float64
+    assert not target.training
+    assert target.running_mean is not None
+    torch.testing.assert_close(target.weight, torch.full_like(target.weight, 3))
+    torch.testing.assert_close(target.running_mean, torch.full_like(target.running_mean, 4))
+
+
+@pytest.mark.parametrize("device", [None, "cpu"])
+def test_best_model_repeated_loading_keeps_weights_and_extra_state_independent(device) -> None:
+    model = _ExtraStateModel()
+    best = fts.best_model("score", device=device)
+    best({"model": model, "score": 1.0})
+    with torch.no_grad():
+        model.weight.fill_(2)
+    model.info["labels"].append("source change")
+
+    target = _ExtraStateModel()
+    for _ in range(2):
+        with torch.no_grad():
+            target.weight.fill_(9)
+        target.info["labels"].append("target change")
+        best.load_into(target)
+        assert target.weight.item() == 1.0
+        assert target.info == {"labels": ["original"]}
