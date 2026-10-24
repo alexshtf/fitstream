@@ -43,8 +43,8 @@ class BestModel:
             self._state = _snapshot_state(event["model"], self._device)
             self._best = value
 
-    def restore(self, model: nn.Module) -> None:
-        """Restore the saved state without sharing mutable extra state with the model."""
+    def load_into(self, model: nn.Module) -> None:
+        """Load the best saved state into ``model`` without sharing mutable extra state."""
         if self._state is None:
             raise RuntimeError("No model state has been captured yet.")
         model.load_state_dict(deepcopy(self._state))
@@ -56,5 +56,5 @@ def best_model(
     direction: Literal["min", "max"] = "min",
     device: str | torch.device | None = None,
 ) -> BestModel:
-    """Create a best-model callback for ``tap`` with explicit ``restore(model)``."""
+    """Create a best-model callback for ``tap`` with explicit ``load_into(model)``."""
     return BestModel(metric_key, direction, device)

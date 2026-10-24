@@ -53,19 +53,19 @@ def test_snapshot_preserves_metadata_and_copies_extra_state() -> None:
 
     assert isinstance(state, OrderedDict)
     assert state["0._extra_state"] == {"labels": ["original"]}
-    restored_child = _ExtraStateModel()
+    target_child = _ExtraStateModel()
     loaded_versions: list[int | None] = []
 
     def record_version(_module, _state_dict, _prefix, local_metadata, *_) -> None:
         loaded_versions.append(local_metadata.get("version"))
 
-    restored_child.register_load_state_dict_pre_hook(record_version)
-    nn.Sequential(restored_child).load_state_dict(state)
-    assert restored_child.info == {"labels": ["original"]}
+    target_child.register_load_state_dict_pre_hook(record_version)
+    nn.Sequential(target_child).load_state_dict(state)
+    assert target_child.info == {"labels": ["original"]}
     assert loaded_versions == [3]
 
 
-def test_best_model_tracks_and_restores_through_tap() -> None:
+def test_best_model_tracks_through_tap_and_loads_into_model() -> None:
     model = nn.Linear(1, 1, bias=False)
     best = fts.best_model(metric_key="val_loss", direction="min")
 
@@ -80,6 +80,62 @@ def test_best_model_tracks_and_restores_through_tap() -> None:
     assert model.weight.item() == 3.0
 
     parameter = model.weight
-    best.restore(model)
+    best.load_into(model)
     assert model.weight is parameter
     assert model.weight.item() == 2.0
+
+
+@pytest.mark.parametrize(
+    "direction,metrics",
+    [
+        (None, [3.0, 1.0, 2.0, 0.0, 0.0]),
+        ("min", [3.0, 1.0, 2.0, 0.0, 0.0]),
+        ("max", [1.0, 3.0, 2.0, 4.0, 4.0]),
+    ],
+)
+def test_best_model_selects_strict_improvements(direction, metrics) -> None:
+    model = nn.Linear(1, 1, bias=False)
+    target = nn.Linear(1, 1, bias=False)
+    best = fts.best_model("score") if direction is None else fts.best_model("score", direction=direction)
+
+    for step, (metric, expected_step) in enumerate(zip(metrics, [1, 2, 2, 4, 4], strict=True), start=1):
+        with torch.no_grad():
+            model.weight.fill_(step)
+        best({"model": model, "score": metric})
+        best.load_into(target)
+        assert target.weight.item() == expected_step
+
+
+@pytest.mark.parametrize("direction", ["minimum", "MAX", ""])
+def test_best_model_rejects_invalid_direction(direction) -> None:
+    with pytest.raises(ValueError, match="direction"):
+        fts.best_model("score", direction=direction)
+
+
+def test_best_model_load_into_requires_a_snapshot() -> None:
+    best = fts.best_model("score")
+    with pytest.raises(RuntimeError, match="No model state has been captured"):
+        best.load_into(nn.Linear(1, 1))
+
+
+@pytest.mark.parametrize("metric", [float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize("has_snapshot", [False, True])
+def test_best_model_rejects_nonfinite_metrics_without_changing_snapshot(metric, has_snapshot) -> None:
+    model = nn.Linear(1, 1, bias=False)
+    best = fts.best_model("score")
+    with torch.no_grad():
+        model.weight.fill_(1)
+    if has_snapshot:
+        best({"model": model, "score": 1.0})
+    with torch.no_grad():
+        model.weight.fill_(2)
+
+    with pytest.raises(ValueError, match="must be finite"):
+        best({"model": model, "score": metric})
+
+    if has_snapshot:
+        best.load_into(model)
+        assert model.weight.item() == 1.0
+    else:
+        with pytest.raises(RuntimeError, match="No model state has been captured"):
+            best.load_into(model)
