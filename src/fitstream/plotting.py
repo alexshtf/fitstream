@@ -1,11 +1,14 @@
+from time import monotonic
 from typing import Any, Self
 
 
 class LivePlot:
     """Notebook plot callback and context manager returned by ``live_plot``."""
 
-    def __init__(self, keys: tuple[str, ...]) -> None:
+    def __init__(self, keys: tuple[str, ...], *, min_interval: float = 1.0) -> None:
         self._keys = keys
+        self._min_interval = min_interval
+        self._last_refresh: float | None = None
         self._steps: list[float] = []
         self._values: dict[str, list[float]] = {key: [] for key in keys}
 
@@ -23,19 +26,25 @@ class LivePlot:
         return self
 
     def __call__(self, event: dict[str, Any]) -> None:
-        """Record an event's step and scalar metrics, then redraw the curves."""
+        """Record every event, redrawing when the minimum interval has elapsed."""
         self._steps.append(float(event["step"]))
         for key in self._keys:
             self._values[key].append(float(event[key]))
-        self.refresh()
+        if (
+            self._last_refresh is None
+            or len(self._steps) == 1
+            or monotonic() - self._last_refresh >= self._min_interval
+        ):
+            self.refresh()
 
     def refresh(self) -> None:
-        """Update the notebook display with all recorded points."""
+        """Redraw all recorded points immediately, restarting the refresh interval."""
         for key, line in self._lines.items():
             line.set_data(self._steps, self._values[key])
         self.ax.relim()
         self.ax.autoscale_view()
         self._display.update(self._figure)
+        self._last_refresh = monotonic()
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         import matplotlib.pyplot as plt
@@ -44,12 +53,16 @@ class LivePlot:
         plt.close(self._figure)
 
 
-def live_plot(*keys: str) -> LivePlot:
+def live_plot(*keys: str, min_interval: float = 1.0) -> LivePlot:
     """Plot scalar event metrics against ``step`` in one updating notebook output.
 
     Use ``with live_plot(...) as plot`` and consume the stream through ``tap(plot)``.
     Install ``fitstream[notebook]`` for the optional plotting dependencies.
-    Each event redraws the curves; context exit refreshes and closes the figure.
+    The first event is drawn immediately. Subsequent automatic redraws are at least
+    ``min_interval`` seconds apart (default: 1.0); zero redraws on every event.
+    All points are retained. Updates happen at event boundaries, without a timer.
+    Explicit ``refresh()`` and context exit redraw regardless of the interval.
+    Context exit also closes the figure.
     The axes remain available as ``plot.ax`` for customization and saving afterward.
     """
-    return LivePlot(keys)
+    return LivePlot(keys, min_interval=min_interval)
