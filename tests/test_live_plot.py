@@ -4,6 +4,7 @@ import pytest
 matplotlib.use("Agg")
 
 from IPython.display import DisplayHandle
+import matplotlib.pyplot as plt
 
 import fitstream as fts
 
@@ -81,3 +82,40 @@ def test_live_plot_zero_interval_redraws_each_event(monkeypatch, plot_updates) -
         for step in range(1, 4):
             plot({"step": step, "loss": float(step)})
             assert plot_updates[-1] == list(range(1, step + 1))
+
+
+@pytest.mark.parametrize("supply_ax", [False, True])
+def test_live_plot_preserves_supplied_axes_and_closes_only_owned_figures(monkeypatch, plot_updates, supply_ax) -> None:
+    figure, (ax, other_ax) = plt.subplots(1, 2)
+    other_curve = other_ax.plot([0, 1], [1, 0])[0]
+    (baseline,) = ax.plot([0, 10], [4, 4], label="baseline")
+    ax.set(xlabel="epoch", title="Experiment", xlim=(0, 10))
+    legend = ax.legend()
+    closed = []
+    close = plt.close
+
+    def record_close(fig):
+        closed.append(fig)
+        close(fig)
+
+    monkeypatch.setattr(plt, "close", record_close)
+    try:
+        with fts.live_plot("loss", ax=ax if supply_ax else None) as plot:
+            assert (plot.ax is ax) == supply_ax
+            plot({"step": 2, "loss": 3.0})
+        assert (plot.ax.figure in closed) == (not supply_ax)
+        assert figure not in closed
+        assert other_curve in other_ax.get_lines()
+        assert list(other_curve.get_ydata()) == [1, 0]
+        assert baseline in ax.get_lines()
+        assert list(baseline.get_ydata()) == [4, 4]
+        assert ax.get_xlabel() == "epoch"
+        assert ax.get_title() == "Experiment"
+        assert ax.get_xlim() == (0, 10)
+        assert ax.get_legend() is legend
+        curves = {line.get_label(): line for line in plot.ax.get_lines()}
+        assert set(curves) == ({"baseline", "loss"} if supply_ax else {"loss"})
+        assert list(curves["loss"].get_xdata()) == [2.0]
+        assert list(curves["loss"].get_ydata()) == [3.0]
+    finally:
+        close(figure)

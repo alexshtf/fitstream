@@ -1,12 +1,20 @@
+from __future__ import annotations
+
 from time import monotonic
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
 
 
 class LivePlot:
     """Notebook plot callback and context manager returned by ``live_plot``."""
 
-    def __init__(self, keys: tuple[str, ...], *, min_interval: float = 1.0) -> None:
+    def __init__(self, keys: tuple[str, ...], *, ax: Axes | None = None, min_interval: float = 1.0) -> None:
         self._keys = keys
+        self._provided_ax = ax
+        self._owned_figure: Figure | None = None
         self._min_interval = min_interval
         self._last_refresh: float | None = None
         self._steps: list[float] = []
@@ -16,13 +24,17 @@ class LivePlot:
         import matplotlib.pyplot as plt
         from IPython.display import DisplayHandle
 
-        with plt.ioff():
-            self._figure, self.ax = plt.subplots()
+        if self._provided_ax is None:
+            with plt.ioff():
+                self._owned_figure, self.ax = plt.subplots()
+            self.ax.set_xlabel("step")
+        else:
+            self.ax = self._provided_ax
         self._lines = {key: self.ax.plot([], [], label=key)[0] for key in self._keys}
-        self.ax.set_xlabel("step")
-        self.ax.legend()
+        if self._provided_ax is None:
+            self.ax.legend()
         self._display = DisplayHandle()
-        self._display.display(self._figure)
+        self._display.display(self.ax.figure)
         return self
 
     def __call__(self, event: dict[str, Any]) -> None:
@@ -43,17 +55,18 @@ class LivePlot:
             line.set_data(self._steps, self._values[key])
         self.ax.relim()
         self.ax.autoscale_view()
-        self._display.update(self._figure)
+        self._display.update(self.ax.figure)
         self._last_refresh = monotonic()
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         import matplotlib.pyplot as plt
 
         self.refresh()
-        plt.close(self._figure)
+        if self._owned_figure is not None:
+            plt.close(self._owned_figure)
 
 
-def live_plot(*keys: str, min_interval: float = 1.0) -> LivePlot:
+def live_plot(*keys: str, ax: Axes | None = None, min_interval: float = 1.0) -> LivePlot:
     """Plot scalar event metrics against ``step`` in one updating notebook output.
 
     Use ``with live_plot(...) as plot`` and consume the stream through ``tap(plot)``.
@@ -62,7 +75,9 @@ def live_plot(*keys: str, min_interval: float = 1.0) -> LivePlot:
     ``min_interval`` seconds apart (default: 1.0); zero redraws on every event.
     All points are retained. Updates happen at event boundaries, without a timer.
     Explicit ``refresh()`` and context exit redraw regardless of the interval.
-    Context exit also closes the figure.
+    Pass ``ax`` to add curves to existing axes. Existing artists, labels, and legend
+    are preserved; configure labels and the legend yourself when supplying axes.
+    Context exit closes only figures created by this helper.
     The axes remain available as ``plot.ax`` for customization and saving afterward.
     """
-    return LivePlot(keys, min_interval=min_interval)
+    return LivePlot(keys, ax=ax, min_interval=min_interval)
