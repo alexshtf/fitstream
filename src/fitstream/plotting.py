@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import ExitStack
 from math import isfinite, nan
 from time import monotonic
 from typing import TYPE_CHECKING, Any, Self
@@ -41,17 +42,20 @@ class LivePlot:
             ) from exc
 
         self._entered = True
-        if self._provided_ax is None:
-            with plt.ioff():
-                self._owned_figure, self.ax = plt.subplots()
-            self.ax.set_xlabel("step")
-        else:
-            self.ax = self._provided_ax
-        self._lines = {key: self.ax.plot([], [], label=key)[0] for key in self._keys}
-        if self._provided_ax is None:
-            self.ax.legend()
-        self._display = DisplayHandle()
-        self._display.display(self.ax.figure)
+        with ExitStack() as cleanup:
+            if self._provided_ax is None:
+                with plt.ioff():
+                    self._owned_figure, self.ax = plt.subplots()
+                cleanup.callback(plt.close, self._owned_figure)
+                self.ax.set_xlabel("step")
+            else:
+                self.ax = self._provided_ax
+            self._lines = {key: self.ax.plot([], [], label=key)[0] for key in self._keys}
+            if self._provided_ax is None:
+                self.ax.legend()
+            self._display = DisplayHandle()
+            self._display.display(self.ax.figure)
+            cleanup.pop_all()
         self._active = True
         return self
 
@@ -91,6 +95,10 @@ class LivePlot:
 
         try:
             self.refresh()
+        except Exception as error:
+            if exc_value is None:
+                raise
+            exc_value.add_note(f"live_plot final refresh also failed: {error}")
         finally:
             self._active = False
             if self._owned_figure is not None:
@@ -115,5 +123,7 @@ def live_plot(*keys: str, ax: Axes | None = None, min_interval: float = 1.0) -> 
     Values must be convertible to floats; invalid events are rejected without recording any points.
     Each plotter can be entered once. Recording and ``refresh()`` require an active context;
     misuse raises ``RuntimeError``. Missing plotting dependencies raise ``ImportError`` on entry.
+    Failed setup closes owned figures. A failed final refresh propagates unless training
+    already raised an exception; then the training exception is preserved with an added note.
     """
     return LivePlot(keys, ax=ax, min_interval=min_interval)

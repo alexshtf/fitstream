@@ -213,3 +213,64 @@ def test_live_plot_rejects_nested_entry_and_reuse(plot_updates) -> None:
     with pytest.raises(RuntimeError):
         with plot:
             pytest.fail("Reusing a plotter must fail.")
+
+
+@pytest.fixture
+def closed_figures(monkeypatch):
+    closed, original_close = [], plt.close
+
+    def record_close(figure):
+        closed.append(figure)
+        original_close(figure)
+
+    monkeypatch.setattr(plt, "close", record_close)
+    return closed
+
+
+@pytest.fixture(params=[False, True])
+def supplied_ax(request):
+    ax = plt.subplots()[1] if request.param else None
+    try:
+        yield ax
+    finally:
+        if ax is not None:
+            plt.close(ax.figure)
+
+
+def test_live_plot_closes_only_owned_figure_when_display_fails(monkeypatch, closed_figures, supplied_ax) -> None:
+    failure = RuntimeError("Display failed")
+
+    def fail_display(*args):
+        raise failure
+
+    monkeypatch.setattr(DisplayHandle, "display", fail_display)
+    plot = fts.live_plot("loss", ax=supplied_ax)
+    with pytest.raises(RuntimeError) as caught:
+        with plot:
+            pytest.fail("The context body must not run when display fails.")
+    assert caught.value is failure
+    assert (plot.ax.figure in closed_figures) == (supplied_ax is None)
+    with pytest.raises(RuntimeError):
+        plot.refresh()
+
+
+@pytest.mark.parametrize("training_error", [None, ValueError("Training failed"), KeyboardInterrupt()])
+def test_live_plot_final_refresh_failure_preserves_training_error(
+    monkeypatch, plot_updates, closed_figures, training_error, supplied_ax
+) -> None:
+    failure = RuntimeError("Refresh failed")
+
+    def fail_update(*args):
+        raise failure
+
+    expected = training_error if training_error is not None else failure
+    with pytest.raises(type(expected)) as caught:
+        with fts.live_plot("loss", ax=supplied_ax) as plot:
+            plot({"step": 1, "loss": 2})
+            monkeypatch.setattr(DisplayHandle, "update", fail_update)
+            if training_error is not None:
+                raise training_error
+    assert caught.value is expected
+    assert (plot.ax.figure in closed_figures) == (supplied_ax is None)
+    with pytest.raises(RuntimeError):
+        plot.refresh()
