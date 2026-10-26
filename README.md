@@ -203,6 +203,29 @@ Ties retain the earlier state. Create a new tracker for each run.
 With `device=None` (the default), snapshot tensors stay on their original devices; `device="cpu"` stores them on CPU.
 `load_into(model)` preserves the target model's parameter devices, dtypes, and training/evaluation mode.
 
+### Live learning curves in notebooks
+
+Install `pip install "fitstream[notebook]"` for Matplotlib and IPython support.
+In a Jupyter-compatible notebook, consume a bounded training stream inside the plotting context:
+
+```python
+import fitstream as fts
+
+events = fts.pipe(
+    fts.epoch_stream((X, y), model, optimizer, loss, batch_size=32),
+    fts.take(200),
+    fts.augment(fts.validation_loss((X_val, y_val), loss)),
+)
+with fts.live_plot("train_loss", "val_loss", min_interval=1.0) as plot:
+    for event in plot(events):
+        print(event["step"], event["val_loss"])
+```
+
+Every event is recorded; automatic redraws are throttled to at most once per second after the first event.
+Context exit displays the final points. Use `plot.refresh()` inside the context to force a redraw,
+or `min_interval=0` to redraw every event. Create a new stream and plotter for each run.
+See the [tutorial](docs/tutorial.md#live-learning-curves-in-notebooks) for supplied axes and saving figures.
+
 ## Sinks
 Iterating over events and doing something yourself can be tedious, so we have some utilities to help you process the
 event stream.

@@ -39,6 +39,10 @@ classifiers = [
 requires = ["uv_build>=0.9.28,<0.10.0"]
 build-backend = "uv_build"
 
+[project.optional-dependencies]
+plot = ["matplotlib"]
+notebook = ["matplotlib", "ipython"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
@@ -49,6 +53,8 @@ dev = [
     "mkdocs>=1.6.0",
     "mkdocstrings[python]>=0.24.0",
     "pandas>=2.2",
+    "matplotlib",
+    "ipython",
 ]
 
 [project.urls]

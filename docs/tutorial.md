@@ -397,6 +397,52 @@ If your model is on the GPU, you can store the best model state on the CPU to sa
 best = best_model("val_loss", device="cpu")
 ```
 
+#### Live learning curves in notebooks
+
+In a notebook, install the plotting dependencies:
+
+```shell
+pip install "fitstream[notebook]"
+```
+
+Create a training event stream as usual, then pass it through the plotting stage inside an
+`fts.live_plot` context to watch the learning curves update as training progresses:
+
+```python
+%matplotlib inline
+import fitstream as fts
+
+events = fts.pipe(
+    fts.epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512),
+    fts.take(200),
+    fts.augment(fts.validation_loss((x_val, y_val), loss_fn)),
+    fts.early_stop("val_loss", patience=10),
+)
+# Redraw at most once a second while retaining every epoch.
+with fts.live_plot("train_loss", "val_loss", min_interval=1.0) as plot:
+    for event in fts.pipe(events, plot):
+        print(event["step"], event["val_loss"])
+
+plot.ax.figure.savefig("learning-curves.svg")
+```
+
+The final points appear when the context exits. Use `min_interval=0` to redraw every epoch.
+
+For a custom layout, recreate the model, optimizer, and stream for a fresh run, then supply `ax`:
+
+```python
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+ax.set(xlabel="Epoch", ylabel="Loss", title="My experiment")
+with fts.live_plot("train_loss", "val_loss", ax=ax) as plot:
+    ax.legend()
+    for event in plot(events):
+        print(event["step"], event["val_loss"])
+fig.savefig("custom-learning-curves.svg")
+plt.close(fig)  # Close the supplied figure when finished.
+```
+
 ### 7.2 Learning rate scheduling with `tick(...)`
 
 If you have a `tick(fn)` stage (a no-argument cousin of `tap(...)` that calls `fn()` once per event), it’s a clean way
