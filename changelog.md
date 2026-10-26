@@ -2,6 +2,16 @@
 
 This changelog is organized by the repository's Git tags.
 
+## v0.4.1 (2026-10-26)
+
+Changes since `v0.4.0`.
+
+### Added
+
+- Live learning curves in notebooks with `live_plot`. Visualize training and
+  validation metrics as training runs to monitor convergence and spot signs of
+  overfitting, directly within your existing training pipeline.
+
 ## v0.4.0 (2026-10-24)
 
 Changes since `v0.3.1`.
