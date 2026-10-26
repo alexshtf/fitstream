@@ -1,3 +1,5 @@
+from math import isnan
+
 import matplotlib
 import pytest
 
@@ -119,3 +121,53 @@ def test_live_plot_preserves_supplied_axes_and_closes_only_owned_figures(monkeyp
         assert list(curves["loss"].get_ydata()) == [3.0]
     finally:
         close(figure)
+
+
+@pytest.mark.parametrize(
+    "keys,interval",
+    [
+        ((), 1),
+        (("",), 1),
+        ((None,), 1),
+        (("loss", "loss"), 1),
+        (("loss",), -1),
+        (("loss",), float("nan")),
+        (("loss",), float("inf")),
+    ],
+)
+def test_live_plot_rejects_invalid_configuration(keys, interval) -> None:
+    with pytest.raises(ValueError):
+        fts.live_plot(*keys, min_interval=interval)
+
+
+@pytest.mark.parametrize("metrics", [{}, {"loss": float("nan")}, {"loss": float("inf")}, {"loss": -float("inf")}])
+def test_live_plot_missing_and_nonfinite_metrics_leave_gaps(plot_updates, metrics) -> None:
+    with fts.live_plot("loss") as plot:
+        plot({"step": 1, "loss": 5.0})
+        plot({"step": 2, **metrics})
+        plot({"step": 3, "loss": 3.0})
+    first, gap, last = plot_updates[-1]
+    assert (first, last) == (5.0, 3.0)
+    assert isnan(gap)
+
+
+@pytest.mark.parametrize(
+    "event,error",
+    [
+        ({}, KeyError),
+        ({"step": float("nan")}, ValueError),
+        ({"step": float("inf")}, ValueError),
+        ({"step": 2, "loss": "invalid"}, ValueError),
+        ({"step": 2, "loss": 9, "other": [1, 2]}, TypeError),
+    ],
+)
+def test_live_plot_rejected_event_does_not_change_curves(plot_updates, event, error) -> None:
+    with fts.live_plot("loss", "other") as plot:
+        plot({"step": 1, "loss": 5, "other": 6})
+        with pytest.raises(error):
+            plot(event)
+        plot({"step": 3, "loss": 3, "other": 4})
+    curves = {line.get_label(): line for line in plot.ax.get_lines()}
+    for key, expected in {"loss": [5, 3], "other": [6, 4]}.items():
+        assert list(curves[key].get_xdata()) == [1, 3]
+        assert list(curves[key].get_ydata()) == expected

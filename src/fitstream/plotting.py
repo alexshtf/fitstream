@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import isfinite, nan
 from time import monotonic
 from typing import TYPE_CHECKING, Any, Self
 
@@ -12,6 +13,12 @@ class LivePlot:
     """Notebook plot callback and context manager returned by ``live_plot``."""
 
     def __init__(self, keys: tuple[str, ...], *, ax: Axes | None = None, min_interval: float = 1.0) -> None:
+        if not keys or any(not isinstance(key, str) or not key for key in keys):
+            raise ValueError("Provide at least one nonempty metric key.")
+        if len(set(keys)) != len(keys):
+            raise ValueError("Metric keys must be unique.")
+        if not isfinite(min_interval) or min_interval < 0:
+            raise ValueError("min_interval must be finite and nonnegative.")
         self._keys = keys
         self._provided_ax = ax
         self._owned_figure: Figure | None = None
@@ -39,9 +46,13 @@ class LivePlot:
 
     def __call__(self, event: dict[str, Any]) -> None:
         """Record every event, redrawing when the minimum interval has elapsed."""
-        self._steps.append(float(event["step"]))
-        for key in self._keys:
-            self._values[key].append(float(event[key]))
+        step = float(event["step"])
+        if not isfinite(step):
+            raise ValueError("Event 'step' must be finite.")
+        values = {key: float(event.get(key, nan)) for key in self._keys}
+        self._steps.append(step)
+        for key, value in values.items():
+            self._values[key].append(value if isfinite(value) else nan)
         if (
             self._last_refresh is None
             or len(self._steps) == 1
@@ -79,5 +90,8 @@ def live_plot(*keys: str, ax: Axes | None = None, min_interval: float = 1.0) -> 
     are preserved; configure labels and the legend yourself when supplying axes.
     Context exit closes only figures created by this helper.
     The axes remain available as ``plot.ax`` for customization and saving afterward.
+    Metric keys must be nonempty and unique; ``min_interval`` must be finite and nonnegative.
+    Missing or nonfinite metrics create gaps. Steps must be present and finite.
+    Values must be convertible to floats; invalid events are rejected without recording any points.
     """
     return LivePlot(keys, ax=ax, min_interval=min_interval)
