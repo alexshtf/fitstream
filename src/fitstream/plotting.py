@@ -26,11 +26,21 @@ class LivePlot:
         self._last_refresh: float | None = None
         self._steps: list[float] = []
         self._values: dict[str, list[float]] = {key: [] for key in keys}
+        self._entered = False
+        self._active = False
 
     def __enter__(self) -> Self:
-        import matplotlib.pyplot as plt
-        from IPython.display import DisplayHandle
+        if self._entered:
+            raise RuntimeError("Create a new live_plot context for each run.")
+        try:
+            import matplotlib.pyplot as plt
+            from IPython.display import DisplayHandle
+        except ImportError as exc:
+            raise ImportError(
+                "live_plot requires Matplotlib and IPython. Install with: pip install 'fitstream[notebook]'"
+            ) from exc
 
+        self._entered = True
         if self._provided_ax is None:
             with plt.ioff():
                 self._owned_figure, self.ax = plt.subplots()
@@ -42,10 +52,16 @@ class LivePlot:
             self.ax.legend()
         self._display = DisplayHandle()
         self._display.display(self.ax.figure)
+        self._active = True
         return self
+
+    def _require_active(self) -> None:
+        if not self._active:
+            raise RuntimeError("Use live_plot inside its 'with' context.")
 
     def __call__(self, event: dict[str, Any]) -> None:
         """Record every event, redrawing when the minimum interval has elapsed."""
+        self._require_active()
         step = float(event["step"])
         if not isfinite(step):
             raise ValueError("Event 'step' must be finite.")
@@ -62,6 +78,7 @@ class LivePlot:
 
     def refresh(self) -> None:
         """Redraw all recorded points immediately, restarting the refresh interval."""
+        self._require_active()
         for key, line in self._lines.items():
             line.set_data(self._steps, self._values[key])
         self.ax.relim()
@@ -72,9 +89,12 @@ class LivePlot:
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         import matplotlib.pyplot as plt
 
-        self.refresh()
-        if self._owned_figure is not None:
-            plt.close(self._owned_figure)
+        try:
+            self.refresh()
+        finally:
+            self._active = False
+            if self._owned_figure is not None:
+                plt.close(self._owned_figure)
 
 
 def live_plot(*keys: str, ax: Axes | None = None, min_interval: float = 1.0) -> LivePlot:
@@ -93,5 +113,7 @@ def live_plot(*keys: str, ax: Axes | None = None, min_interval: float = 1.0) -> 
     Metric keys must be nonempty and unique; ``min_interval`` must be finite and nonnegative.
     Missing or nonfinite metrics create gaps. Steps must be present and finite.
     Values must be convertible to floats; invalid events are rejected without recording any points.
+    Each plotter can be entered once. Recording and ``refresh()`` require an active context;
+    misuse raises ``RuntimeError``. Missing plotting dependencies raise ``ImportError`` on entry.
     """
     return LivePlot(keys, ax=ax, min_interval=min_interval)

@@ -1,3 +1,4 @@
+import builtins
 from math import isnan
 
 import matplotlib
@@ -171,3 +172,44 @@ def test_live_plot_rejected_event_does_not_change_curves(plot_updates, event, er
     for key, expected in {"loss": [5, 3], "other": [6, 4]}.items():
         assert list(curves[key].get_xdata()) == [1, 3]
         assert list(curves[key].get_ydata()) == expected
+
+
+@pytest.mark.parametrize("dependency", ["matplotlib", "IPython"])
+def test_live_plot_missing_dependency_explains_installation(monkeypatch, dependency) -> None:
+    original_import = builtins.__import__
+
+    def blocked_import(name, *args, **kwargs):
+        if name.split(".")[0] == dependency:
+            raise ModuleNotFoundError(name, name=name)
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked_import)
+    with pytest.raises(ImportError, match=r"pip install 'fitstream\[notebook\]'"):
+        with fts.live_plot("loss"):
+            pytest.fail("The body must not run without plotting dependencies.")
+
+
+@pytest.mark.parametrize(
+    "action", [lambda plot: plot({"step": 1, "loss": 2}), lambda plot: plot.refresh()], ids=["record", "refresh"]
+)
+def test_live_plot_requires_active_context(plot_updates, action) -> None:
+    plot = fts.live_plot("loss")
+    with pytest.raises(RuntimeError):
+        action(plot)
+    with plot:
+        pass
+    with pytest.raises(RuntimeError):
+        action(plot)
+
+
+def test_live_plot_rejects_nested_entry_and_reuse(plot_updates) -> None:
+    plot = fts.live_plot("loss")
+    with plot:
+        with pytest.raises(RuntimeError):
+            with plot:
+                pytest.fail("Nested entry must fail.")
+        plot({"step": 1, "loss": 2})
+    assert plot_updates[-1] == [2]
+    with pytest.raises(RuntimeError):
+        with plot:
+            pytest.fail("Reusing a plotter must fail.")
