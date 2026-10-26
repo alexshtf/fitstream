@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from contextlib import ExitStack
 from math import isfinite, nan
 from time import monotonic
@@ -11,7 +12,7 @@ if TYPE_CHECKING:
 
 
 class LivePlot:
-    """Notebook plot callback and context manager returned by ``live_plot``."""
+    """Notebook plotting stage and context manager returned by ``live_plot``."""
 
     def __init__(self, keys: tuple[str, ...], *, ax: Axes | None = None, min_interval: float = 1.0) -> None:
         if not keys or any(not isinstance(key, str) or not key for key in keys):
@@ -63,7 +64,15 @@ class LivePlot:
         if not self._active:
             raise RuntimeError("Use live_plot inside its 'with' context.")
 
-    def __call__(self, event: dict[str, Any]) -> None:
+    def __call__(self, events: Iterable[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+        """Lazily plot events and yield each unchanged within the active context."""
+        self._require_active()
+        for event in events:
+            self._record(event)
+            yield event
+            self._require_active()
+
+    def _record(self, event: dict[str, Any]) -> None:
         """Record every event, redrawing when the minimum interval has elapsed."""
         self._require_active()
         step = float(event["step"])
@@ -108,7 +117,7 @@ class LivePlot:
 def live_plot(*keys: str, ax: Axes | None = None, min_interval: float = 1.0) -> LivePlot:
     """Plot scalar event metrics against ``step`` in one updating notebook output.
 
-    Use ``with live_plot(...) as plot`` and consume the stream through ``tap(plot)``.
+    Use ``with live_plot(...) as plot`` and iterate over ``plot(events)`` or ``pipe(events, plot)``.
     Install ``fitstream[notebook]`` for the optional plotting dependencies.
     The first event is drawn immediately. Subsequent automatic redraws are at least
     ``min_interval`` seconds apart (default: 1.0); zero redraws on every event.
@@ -121,7 +130,7 @@ def live_plot(*keys: str, ax: Axes | None = None, min_interval: float = 1.0) -> 
     Metric keys must be nonempty and unique; ``min_interval`` must be finite and nonnegative.
     Missing or nonfinite metrics create gaps. Steps must be present and finite.
     Values must be convertible to floats; invalid events are rejected without recording any points.
-    Each plotter can be entered once. Recording and ``refresh()`` require an active context;
+    Each plotter can be entered once. Stream consumption and ``refresh()`` require an active context;
     misuse raises ``RuntimeError``. Missing plotting dependencies raise ``ImportError`` on entry.
     Failed setup closes owned figures. A failed final refresh propagates unless training
     already raised an exception; then the training exception is preserved with an added note.

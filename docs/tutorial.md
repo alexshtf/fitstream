@@ -405,7 +405,7 @@ In a notebook, install the plotting dependencies:
 pip install "fitstream[notebook]"
 ```
 
-Create a training event stream as usual, then pass each event to the plotter inside an
+Create a training event stream as usual, then pass it through the plotting stage inside an
 `fts.live_plot` context to watch the learning curves update as training progresses:
 
 ```python
@@ -420,8 +420,8 @@ events = fts.pipe(
 )
 # Redraw at most once a second while retaining every epoch.
 with fts.live_plot("train_loss", "val_loss", min_interval=1.0) as plot:
-    for event in events:
-        plot(event)
+    for event in fts.pipe(events, plot):
+        print(event["step"], event["val_loss"])
 
 plot.ax.figure.savefig("learning-curves.svg")
 ```
@@ -437,8 +437,7 @@ fig, ax = plt.subplots()
 ax.set(xlabel="Epoch", ylabel="Loss", title="My experiment")
 with fts.live_plot("train_loss", "val_loss", ax=ax) as plot:
     ax.legend()
-    for event in events:
-        plot(event)
+    for event in plot(events):
         print(event["step"], event["val_loss"])
 fig.savefig("custom-learning-curves.svg")
 plt.close(fig)  # Close the supplied figure when finished.

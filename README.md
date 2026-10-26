@@ -217,8 +217,8 @@ events = fts.pipe(
     fts.augment(fts.validation_loss((X_val, y_val), loss)),
 )
 with fts.live_plot("train_loss", "val_loss", min_interval=1.0) as plot:
-    for event in events:
-        plot(event)
+    for event in plot(events):
+        print(event["step"], event["val_loss"])
 ```
 
 Every event is recorded; automatic redraws are throttled to at most once per second after the first event.
