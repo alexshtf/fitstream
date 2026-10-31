@@ -59,8 +59,8 @@ and returns an iterable, so you can combine them with `pipe(...)` or call them d
 does not train the model; consuming it does.
 
 ## Augmentation
-The `augment` function turns an "augmenter" (a function that looks at an event and returns extra keys) into a stream
-transform stage. We typically compose stages with `pipe(...)`.
+The `augment` function turns an "augmenter" (a callable that looks at an event and returns extra keys) into a stream
+transform stage. Augmenters can keep state between events. We typically compose stages with `pipe(...)`.
 
 Here is an example - we add the norm of the model parameters to each event:
 ```python
@@ -132,6 +132,30 @@ for event in events:
     )
 ```
 
+### Keeping the best model
+
+Use `best_model` with `augment` to add the best observed model state to each event as `best_state`:
+
+```python
+import fitstream as fts
+
+events = fts.pipe(
+    fts.epoch_stream((X, y), model, optimizer, loss, batch_size=32),
+    fts.take(500),
+    fts.augment(fts.validation_loss((X_val, y_val), loss)),
+    fts.early_stop(key="val_loss", patience=10),
+    fts.augment(fts.best_model("val_loss")),
+)
+for event in events:
+    print(event["step"], event["val_loss"])
+
+model.load_state_dict(event["best_state"])
+```
+
+In `fts.best_model`, `direction="min"` (the default) selects lower values; use `direction="max"` for metrics such as accuracy.
+Its `device=None` default keeps snapshot tensors on their original devices. If your model is on the GPU, you can pass
+`device="cpu"` to `fts.best_model` to store the best state on the CPU.
+
 ## Selecting events
 Since the training loop is a standard Python iterable, you can use any Python selection logic. FitStream includes a
 small helper, `take(...)`, to limit the number of epochs:
@@ -177,32 +201,6 @@ events = pipe(
 list(events)
 ```
 
-### Keeping the best model
-
-Use `best_model` with `tap` to keep the best observed state and load it into a model after training:
-
-```python
-import fitstream as fts
-
-best = fts.best_model("val_loss", device="cpu")
-events = fts.pipe(
-    fts.epoch_stream((X, y), model, optimizer, loss, batch_size=32),
-    fts.take(500),
-    fts.augment(fts.validation_loss((X_val, y_val), loss)),
-    fts.early_stop(key="val_loss", patience=10),
-    fts.tap(best),
-)
-for event in events:
-    print(event["step"], event["val_loss"])
-
-best.load_into(model)
-```
-
-The default `direction="min"` selects lower values; use `direction="max"` for metrics such as accuracy.
-Ties retain the earlier state. Create a new tracker for each run.
-With `device=None` (the default), snapshot tensors stay on their original devices; `device="cpu"` stores them on CPU.
-`load_into(model)` preserves the target model's parameter devices, dtypes, and training/evaluation mode.
-
 ### Live learning curves in notebooks
 
 Install `pip install "fitstream[notebook]"` for Matplotlib and IPython support.
@@ -230,8 +228,7 @@ See the [tutorial](docs/tutorial.md#live-learning-curves-in-notebooks) for suppl
 Iterating over events and doing something yourself can be tedious, so we have some utilities to help you process the
 event stream.
 
-It is typically useful to collect all events into a list, but exclude the `model` and keep just the metrics. We have 
-the `collect` sink for that:
+Use `collect` to store event records in a list. The `model` field is omitted by default:
 ```python
 from fitstream import collect, epoch_stream, take
 
@@ -246,6 +243,27 @@ from fitstream import collect_jsonl, epoch_stream, take
 # collect 100 epochs to json
 collect_jsonl(take(100)(epoch_stream(...)), 'runs/my_experiment.jsonl')
 ```
+
+`collect` can aggregate data from events using its `reducers` parameter. For example, to collect the history and
+calculate the total training time:
+
+```python
+from operator import add
+
+events = take(100)(epoch_stream((X, y), model, optimizer, loss, batch_size=32))
+history, reduction = collect(events, reducers={"train_time_sec": add})
+print(reduction["train_time_sec"])
+```
+
+Each entry in `reducers` maps an event field to a function that combines the accumulated value with the next value.
+The first event's value initializes the accumulator.
+
+Reducers see fields independently of `include` and `exclude`. For a stream containing `best_state`, use
+`exclude=["best_state"]` with `reducers={"best_state": fts.last_value}` to keep snapshots out of history and
+retain the final best state.
+
+With reducers, `collect_pd` returns `(dataframe, reduction)`; `collect_jsonl` writes the history and returns
+only the reduction dictionary. Without reducers, their return values stay unchanged.
 
 # Documentation
 Full documentation is available at [https://fitstream.readthedocs.io/](https://fitstream.readthedocs.io/).
