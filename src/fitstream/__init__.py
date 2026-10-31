@@ -14,8 +14,9 @@ from .fit import (
     tick as tick,
 )
 from .sinks import collect as collect, collect_jsonl as collect_jsonl, collect_pd as collect_pd
+from .sinks import last_value as last_value
 from .augmentations import evaluate as evaluate, validation_loss as validation_loss
-from .tracking import BestModel as BestModel, best_model as best_model
+from .tracking import best_model as best_model
 from .plotting import LivePlot as LivePlot, live_plot as live_plot
 
 __version__ = _version("fitstream")

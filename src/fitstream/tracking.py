@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from copy import deepcopy
 from math import isfinite
 from typing import Any, Literal
@@ -22,58 +23,13 @@ def _snapshot_state(model: nn.Module, device: str | torch.device | None = None) 
     return deepcopy(state, memo)
 
 
-class BestModel:
-    """Callable that retains the model state with the best observed metric."""
-
-    def __init__(self, metric_key: str, direction: Literal["min", "max"], device: str | torch.device | None) -> None:
-        if direction not in {"min", "max"}:
-            raise ValueError("direction must be one of {'min', 'max'}.")
-        self._metric_key = metric_key
-        self._direction = direction
-        self._device = device
-        self._best: float | None = None
-        self._state: dict[str, Any] | None = None
-
-    def __call__(self, event: dict[str, Any]) -> None:
-        """Observe an event containing ``model`` and the configured metric key.
-
-        Raises ``ValueError`` if the metric, converted to ``float``, is not finite.
-        """
-        value = float(event[self._metric_key])
-        if not isfinite(value):
-            raise ValueError(f"Metric {self._metric_key!r} must be finite.")
-        improved = self._best is None or (value < self._best if self._direction == "min" else value > self._best)
-        if improved:
-            self._state = _snapshot_state(event["model"], self._device)
-            self._best = value
-
-    def load_into(self, model: nn.Module) -> None:
-        """Load the best saved state into a compatible model.
-
-        Args:
-            model: Target whose parameters, buffers, and custom extra state are updated.
-
-        Raises:
-            RuntimeError: No snapshot exists, or PyTorch finds incompatible model state.
-
-        Notes:
-            Preserves the target's parameter objects, parameter/buffer devices and
-            dtypes, and training/evaluation mode. Optimizer and scheduler state are not included.
-            Loading temporarily copies the snapshot on its storage device(s) so mutable
-            extra state remains independent across repeated calls.
-        """
-        if self._state is None:
-            raise RuntimeError("No model state has been captured yet.")
-        model.load_state_dict(deepcopy(self._state))
-
-
 def best_model(
     metric_key: str,
     *,
     direction: Literal["min", "max"] = "min",
     device: str | torch.device | None = None,
-) -> BestModel:
-    """Keep the best observed model state with a callback for ``tap``.
+) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """Create an augmenter that adds the best observed model state to each event.
 
     Args:
         metric_key: Event key containing a finite metric convertible to ``float``.
@@ -84,17 +40,40 @@ def best_model(
             device option does not recursively move tensors nested inside it.
 
     Returns:
-        A stateful callable for ``tap``. Call ``load_into(model)`` on it to load the
-        saved parameters, buffers, and custom extra state into a compatible model.
+        A stateful callable for ``augment`` returning ``{"best_state": state_dict}``.
+        The snapshot contains parameters, buffers, and custom extra state.
 
     Raises:
-        ValueError: ``direction`` is neither ``"min"`` nor ``"max"``.
+        ValueError: ``direction`` is neither ``"min"`` nor ``"max"``. The returned
+            callable also raises if the metric, converted to ``float``, is not finite.
 
     Notes:
-        Keeps one snapshot, replacing it only on strict improvement; ties keep the
-        earlier snapshot. Place ``tap(best)`` after the metric is computed and consume
-        the stream before loading. Only events reaching the callback are considered.
-        Create a new tracker for each run. Loading is explicit and does not resume
-        optimizer or scheduler state.
+        Keeps one snapshot, replacing it only on strict improvement. Ties and worse
+        metrics reuse the current snapshot; earlier snapshots are never updated in place.
+        Place ``augment(best_model(...))`` after computing the metric. Only events
+        reaching the augmenter are considered. Create a new augmenter for each run.
+
+        Treat emitted states as read-only. When collecting metric history, use
+        ``exclude=["best_state"]`` and ``reducers={"best_state": last_value}`` to
+        retain only the final best state. Load it with ``model.load_state_dict(state)``.
+        PyTorch may attach mutable custom extra state by reference when loading;
+        copy the state first if isolation after loading is needed. Optimizer and
+        scheduler state are not included.
     """
-    return BestModel(metric_key, direction, device)
+    if direction not in {"min", "max"}:
+        raise ValueError("direction must be one of {'min', 'max'}.")
+    best: float | None = None
+    state: dict[str, Any] | None = None
+
+    def track(event: dict[str, Any]) -> dict[str, Any]:
+        nonlocal best, state
+        value = float(event[metric_key])
+        if not isfinite(value):
+            raise ValueError(f"Metric {metric_key!r} must be finite.")
+        improved = best is None or (value < best if direction == "min" else value > best)
+        if improved:
+            state = _snapshot_state(event["model"], device)
+            best = value
+        return {"best_state": state}
+
+    return track
