@@ -148,18 +148,16 @@ def test_best_model_instances_and_captured_extra_state_are_independent() -> None
     assert second(event)["best_state"]["weight"].item() == 2.0
     assert state["weight"].item() == 1.0
     assert state["_extra_state"] == {"labels": ["original"]}
+    target = _ExtraStateModel()
+    target.load_state_dict(state)
+    assert target.weight.item() == 1.0
+    assert target.info == {"labels": ["original"]}
 
 
 @pytest.mark.parametrize("direction", ["minimum", "MAX", ""])
 def test_best_model_rejects_invalid_direction(direction) -> None:
     with pytest.raises(ValueError, match="direction"):
         fts.best_model("score", direction=direction)
-
-
-def test_best_model_load_into_requires_a_snapshot() -> None:
-    best = fts.best_model("score")
-    with pytest.raises(RuntimeError, match="No model state has been captured"):
-        best.load_into(nn.Linear(1, 1))
 
 
 @pytest.mark.parametrize("metric", [float("nan"), float("inf"), -float("inf")])
@@ -169,20 +167,17 @@ def test_best_model_rejects_nonfinite_metrics_without_changing_snapshot(metric, 
     best = fts.best_model("score")
     with torch.no_grad():
         model.weight.fill_(1)
-    if has_snapshot:
-        best({"model": model, "score": 1.0})
+    previous = best({"model": model, "score": 1.0})["best_state"] if has_snapshot else None
     with torch.no_grad():
         model.weight.fill_(2)
 
     with pytest.raises(ValueError, match="must be finite"):
         best({"model": model, "score": metric})
 
+    state = best({"model": model, "score": 2.0})["best_state"]
+    assert state["weight"].item() == (1.0 if has_snapshot else 2.0)
     if has_snapshot:
-        best.load_into(model)
-        assert model.weight.item() == 1.0
-    else:
-        with pytest.raises(RuntimeError, match="No model state has been captured"):
-            best.load_into(model)
+        assert state is previous
 
 
 @pytest.mark.parametrize("snapshot_device", [None, "cpu"])
@@ -197,19 +192,13 @@ def test_best_model_snapshot_device_and_loading_preserve_target(source_device, s
         model.weight.fill_(3)
         model.running_mean.fill_(4)
     best = fts.best_model("score", device=snapshot_device)
-    best({"model": model, "score": 1.0})
+    state = best({"model": model, "score": 1.0})["best_state"]
 
     target = nn.BatchNorm1d(2, device=source_device, dtype=torch.float64).eval()
     parameter = target.weight
-    snapshot_devices: set[str] = set()
+    target.load_state_dict(state)
 
-    def record_devices(_module, state_dict, *_) -> None:
-        snapshot_devices.update(value.device.type for value in state_dict.values())
-
-    target.register_load_state_dict_pre_hook(record_devices)
-    best.load_into(target)
-
-    assert snapshot_devices == {snapshot_device or source_device}
+    assert {value.device.type for value in state.values()} == {snapshot_device or source_device}
     assert target.weight is parameter
     assert target.weight.device.type == source_device
     assert target.weight.dtype == torch.float64
@@ -217,22 +206,3 @@ def test_best_model_snapshot_device_and_loading_preserve_target(source_device, s
     assert target.running_mean is not None
     torch.testing.assert_close(target.weight, torch.full_like(target.weight, 3))
     torch.testing.assert_close(target.running_mean, torch.full_like(target.running_mean, 4))
-
-
-@pytest.mark.parametrize("device", [None, "cpu"])
-def test_best_model_repeated_loading_keeps_weights_and_extra_state_independent(device) -> None:
-    model = _ExtraStateModel()
-    best = fts.best_model("score", device=device)
-    best({"model": model, "score": 1.0})
-    with torch.no_grad():
-        model.weight.fill_(2)
-    model.info["labels"].append("source change")
-
-    target = _ExtraStateModel()
-    for _ in range(2):
-        with torch.no_grad():
-            target.weight.fill_(9)
-        target.info["labels"].append("target change")
-        best.load_into(target)
-        assert target.weight.item() == 1.0
-        assert target.info == {"labels": ["original"]}
