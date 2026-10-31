@@ -23,7 +23,7 @@ def _snapshot_state(model: nn.Module, device: str | torch.device | None = None) 
 
 
 class BestModel:
-    """Callable that retains the model state with the best observed metric."""
+    """Augmenter that exposes the model state with the best observed metric."""
 
     def __init__(self, metric_key: str, direction: Literal["min", "max"], device: str | torch.device | None) -> None:
         if direction not in {"min", "max"}:
@@ -34,8 +34,8 @@ class BestModel:
         self._best: float | None = None
         self._state: dict[str, Any] | None = None
 
-    def __call__(self, event: dict[str, Any]) -> None:
-        """Observe an event containing ``model`` and the configured metric key.
+    def __call__(self, event: dict[str, Any]) -> dict[str, Any]:
+        """Return ``best_state`` for an event containing ``model`` and the metric.
 
         Raises ``ValueError`` if the metric, converted to ``float``, is not finite.
         """
@@ -46,6 +46,7 @@ class BestModel:
         if improved:
             self._state = _snapshot_state(event["model"], self._device)
             self._best = value
+        return {"best_state": self._state}
 
     def load_into(self, model: nn.Module) -> None:
         """Load the best saved state into a compatible model.
@@ -73,7 +74,7 @@ def best_model(
     direction: Literal["min", "max"] = "min",
     device: str | torch.device | None = None,
 ) -> BestModel:
-    """Keep the best observed model state with a callback for ``tap``.
+    """Create an augmenter that adds the best observed model state to each event.
 
     Args:
         metric_key: Event key containing a finite metric convertible to ``float``.
@@ -84,17 +85,23 @@ def best_model(
             device option does not recursively move tensors nested inside it.
 
     Returns:
-        A stateful callable for ``tap``. Call ``load_into(model)`` on it to load the
-        saved parameters, buffers, and custom extra state into a compatible model.
+        A stateful callable for ``augment`` returning ``{"best_state": state_dict}``.
+        The snapshot contains parameters, buffers, and custom extra state.
 
     Raises:
         ValueError: ``direction`` is neither ``"min"`` nor ``"max"``.
 
     Notes:
-        Keeps one snapshot, replacing it only on strict improvement; ties keep the
-        earlier snapshot. Place ``tap(best)`` after the metric is computed and consume
-        the stream before loading. Only events reaching the callback are considered.
-        Create a new tracker for each run. Loading is explicit and does not resume
-        optimizer or scheduler state.
+        Keeps one snapshot, replacing it only on strict improvement. Ties and worse
+        metrics reuse the current snapshot; earlier snapshots are never updated in place.
+        Place ``augment(best_model(...))`` after computing the metric. Only events
+        reaching the augmenter are considered. Create a new augmenter for each run.
+
+        Treat emitted states as read-only. When collecting metric history, use
+        ``exclude=["best_state"]`` and ``reducers={"best_state": last_value}`` to
+        retain only the final best state. Load it with ``model.load_state_dict(state)``.
+        PyTorch may attach mutable custom extra state by reference when loading;
+        copy the state first if isolation after loading is needed. Optimizer and
+        scheduler state are not included.
     """
     return BestModel(metric_key, direction, device)

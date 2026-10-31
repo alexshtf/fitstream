@@ -1,4 +1,8 @@
+import gc
+import io
+import json
 from collections import OrderedDict
+from weakref import ref
 
 import pytest
 import torch
@@ -66,9 +70,18 @@ def test_snapshot_preserves_metadata_and_copies_extra_state() -> None:
     assert loaded_versions == [3]
 
 
-def test_best_model_tracks_through_tap_and_loads_into_model() -> None:
+def _capture_jsonl(events, **kwargs):
+    with io.StringIO() as output:
+        reduction = fts.collect_jsonl(events, output, **kwargs)
+        history = [json.loads(line) for line in output.getvalue().splitlines()]
+    return history, reduction
+
+
+@pytest.mark.parametrize("collect_history", [fts.collect, _capture_jsonl], ids=["list", "jsonl"])
+def test_best_model_augments_stream_and_reduces_to_loadable_state(collect_history) -> None:
     model = nn.Linear(1, 1, bias=False)
     best = fts.best_model(metric_key="val_loss", direction="min")
+    snapshots = []
 
     def events():
         for step, loss in enumerate([3.0, 1.0, 2.0], start=1):
@@ -76,12 +89,20 @@ def test_best_model_tracks_through_tap_and_loads_into_model() -> None:
                 model.weight.fill_(step)
             yield {"model": model, "step": step, "val_loss": loss}
 
-    history = fts.collect(fts.pipe(events(), fts.tap(best)))
-    assert [event["val_loss"] for event in history] == [3.0, 1.0, 2.0]
+    stream = fts.pipe(
+        events(), fts.augment(best), fts.tap(lambda event: snapshots.append(ref(event["best_state"]["weight"])))
+    )
+    assert snapshots == []
+    history, reduction = collect_history(stream, exclude=["best_state"], reducers={"best_state": fts.last_value})
+    assert history == [{"step": step, "val_loss": loss} for step, loss in enumerate([3.0, 1.0, 2.0], start=1)]
     assert model.weight.item() == 3.0
+    # Ensure cleanup happens before checking that obsolete snapshots were released.
+    gc.collect()
+    assert snapshots[0]() is None  # Excluded history must not keep obsolete snapshots alive.
+    assert snapshots[1]() is snapshots[2]() is reduction["best_state"]["weight"]
 
     parameter = model.weight
-    best.load_into(model)
+    model.load_state_dict(reduction["best_state"])
     assert model.weight is parameter
     assert model.weight.item() == 2.0
 
@@ -96,15 +117,37 @@ def test_best_model_tracks_through_tap_and_loads_into_model() -> None:
 )
 def test_best_model_selects_strict_improvements(direction, metrics) -> None:
     model = nn.Linear(1, 1, bias=False)
-    target = nn.Linear(1, 1, bias=False)
     best = fts.best_model("score") if direction is None else fts.best_model("score", direction=direction)
+    results = []
 
     for step, (metric, expected_step) in enumerate(zip(metrics, [1, 2, 2, 4, 4], strict=True), start=1):
         with torch.no_grad():
             model.weight.fill_(step)
-        best({"model": model, "score": metric})
-        best.load_into(target)
-        assert target.weight.item() == expected_step
+        result = best({"model": model, "score": metric})
+        assert set(result) == {"best_state"}
+        assert result["best_state"]["weight"].item() == expected_step
+        if results:
+            assert result is not results[-1]
+            assert (result["best_state"] is results[-1]["best_state"]) == (step != expected_step)
+        results.append(result)
+
+    assert [result["best_state"]["weight"].item() for result in results] == [1, 2, 2, 4, 4]
+
+
+def test_best_model_instances_and_captured_extra_state_are_independent() -> None:
+    model = _ExtraStateModel()
+    first = fts.best_model("score")
+    state = first({"model": model, "score": 1.0})["best_state"]
+    with torch.no_grad():
+        model.weight.fill_(2)
+    model.info["labels"].append("source change")
+
+    second = fts.best_model("score")
+    event = {"model": model, "score": 2.0}
+    assert first(event)["best_state"] is state
+    assert second(event)["best_state"]["weight"].item() == 2.0
+    assert state["weight"].item() == 1.0
+    assert state["_extra_state"] == {"labels": ["original"]}
 
 
 @pytest.mark.parametrize("direction", ["minimum", "MAX", ""])
