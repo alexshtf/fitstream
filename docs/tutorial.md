@@ -142,6 +142,19 @@ print(history[-1])
 # {'step': 50, 'train_loss': 0.23, 'train_time_sec': 0.01}
 ```
 
+`collect` can aggregate data from events using its `reducers` parameter. For example, collect the history and
+calculate the total training time:
+
+```python
+from operator import add
+
+events = take(50)(epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=256))
+history, reduction = collect(events, reducers={"train_time_sec": add})
+print(reduction["train_time_sec"])
+```
+
+Here, `add` combines the training times into a total, starting with the first event's value.
+
 When writing to sinks like `collect_jsonl(...)`, make sure event fields are JSON-serializable. If your stream includes
 runtime-only objects in extra fields, use `include` or `exclude` to control what gets saved:
 
@@ -284,7 +297,8 @@ events = pipe(
 
 ## 6) Become a hero: write your own augmenter
 
-An **augmenter** is a function `event -> dict` (or `None`) that adds keys to the event. This is great for:
+An **augmenter** is a callable `event -> dict` (or `None`) that adds keys to the event and can keep state between events.
+This is great for:
 
 - extra metrics (MAE, R², accuracy, …)
 - model stats (weight norms, gradient norms)
@@ -343,15 +357,37 @@ for event in events:
 Each printed row now includes both validation loss and MAE, computed from the same predictions.
 FitStream handles PyTorch's evaluation setup: evaluation mode, no gradients, and restoring the previous modes afterward.
 
+### 6.3 Keeping the best model
+
+Use `best_model` with `augment` to add the state with the lowest validation loss to each event as `best_state`:
+
+```python
+from fitstream import best_model, collect, early_stop, last_value
+
+events = pipe(
+    epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
+    take(500),
+    augment(validation_loss((x_val, y_val), loss_fn)),
+    early_stop(key="val_loss", patience=10, min_delta=1e-4),
+    augment(best_model("val_loss")),
+)
+
+history, reduction = collect(events, exclude=["best_state"], reducers={"best_state": last_value})
+model.load_state_dict(reduction["best_state"])
+```
+
+`exclude` keeps snapshots out of history; `last_value` retains the final best state in `reduction`.
+
+If your model is on the GPU, you can store the best model state on the CPU to save GPU memory:
+
+```python
+augment(best_model("val_loss", device="cpu"))
+```
+
 ## 7) Become a bigger hero: write your own stream processor
 
-An augmenter modifies a single event. A **stream processor** (aka a pipe stage) can do anything that needs state
-across events:
-
-- exponential moving averages
-- periodic logging
-- keeping track of the best metric
-- checkpoints
+A **stream processor** (aka a pipe stage) receives an iterable of events and yields another. It can add fields,
+perform side effects, or control how many events pass downstream.
 
 ### 7.1 Quick side effects with `tap(...)`
 
@@ -369,32 +405,6 @@ events = pipe(
 
 # Consume a few events to actually run it (streams are lazy).
 list(take(15)(events))
-```
-
-#### Keeping the best model
-
-Use `best_model` with `tap` to keep the state with the lowest validation loss, then load it after training:
-
-```python
-from fitstream import best_model, collect, early_stop
-
-best = best_model("val_loss")
-events = pipe(
-    epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
-    take(500),
-    augment(validation_loss((x_val, y_val), loss_fn)),
-    early_stop(key="val_loss", patience=10, min_delta=1e-4),
-    tap(best),
-)
-
-history = collect(events)
-best.load_into(model)
-```
-
-If your model is on the GPU, you can store the best model state on the CPU to save GPU memory:
-
-```python
-best = best_model("val_loss", device="cpu")
 ```
 
 #### Live learning curves in notebooks
@@ -573,6 +583,7 @@ from fitstream import (
     early_stop,
     ema,
     epoch_stream,
+    last_value,
     pipe,
     print_keys,
     take,
@@ -592,7 +603,6 @@ model = nn.Sequential(
 )
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 loss_fn = nn.MSELoss()
-best = best_model("val_loss", device="cpu")
 
 events = pipe(
     epoch_stream((x_train, y_train), model, optimizer, loss_fn, batch_size=512, shuffle=True),
@@ -602,10 +612,15 @@ events = pipe(
     tap(print_keys("train_loss", "val_loss", "val_loss_ema", "param_l2"), every=10),
     take(500),
     early_stop(key="val_loss", patience=20, mode="min", min_delta=1e-4),
-    tap(best),
+    augment(best_model("val_loss", device="cpu")),
 )
 
-# Write the whole training history to disk (one JSON object per line).
-collect_jsonl(events, RUNS_DIR / "california_housing.jsonl")
-best.load_into(model)
+# Write metrics to disk and retain the final best state separately.
+reduction = collect_jsonl(
+    events,
+    RUNS_DIR / "california_housing.jsonl",
+    exclude=["best_state"],
+    reducers={"best_state": last_value},
+)
+model.load_state_dict(reduction["best_state"])
 ```
