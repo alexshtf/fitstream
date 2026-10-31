@@ -2,6 +2,48 @@
 
 This changelog is organized by the repository's Git tags.
 
+## v0.5.0 (2026-10-31)
+
+Changes since `v0.4.1`.
+
+### Breaking changes
+
+- `best_model` is now an augmenter: use it with `augment` to add the best observed
+  model state to each event as `best_state`, instead of using it with `tap`.
+- Removed the `BestModel` class and `load_into` method. Load the collected state
+  with PyTorch's `model.load_state_dict` instead.
+
+To collect metrics and retain the best state from a stream containing `val_loss`:
+
+```python
+import fitstream as fts
+
+events = fts.pipe(events, fts.augment(fts.best_model("val_loss")))
+history, reduction = fts.collect(
+    events,
+    exclude=["best_state"],
+    reducers={"best_state": fts.last_value},
+)
+model.load_state_dict(reduction["best_state"])
+```
+
+### Added
+
+- `collect`, `collect_pd`, and `collect_jsonl` can aggregate event fields using
+  an optional `reducers` mapping. Each reducer combines the accumulated value
+  with the next field value, starting with the first event's value.
+- Reducers read fields independently of `include` and `exclude`, so snapshots
+  can be excluded from history while retaining the final best state.
+- With reducers, `collect` and `collect_pd` return `(history, reduction)`;
+  `collect_jsonl` writes records to disk and returns the reduction dictionary.
+  Without reducers, existing return values are unchanged.
+- `last_value` retains the latest field value when used as a reducer.
+
+### Changed
+
+- Updated the README and tutorial to demonstrate best-model augmentation and
+  aggregation during collection.
+
 ## v0.4.1 (2026-10-26)
 
 Changes since `v0.4.0`.

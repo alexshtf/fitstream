@@ -1,6 +1,6 @@
 [project]
 name = "fitstream"
-version = "0.4.1"
+version = "0.5.0"
 description = "A library to train PyTorch models as a stream of events"
 readme = "README.md"
 requires-python = ">=3.12"
