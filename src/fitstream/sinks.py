@@ -1,7 +1,14 @@
 import json
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, TextIO, overload
+
+_Reducers = Mapping[str, Callable[[Any, Any], Any]]
+
+
+def last_value(previous: Any, current: Any) -> Any:
+    """Return the current value unchanged, for use as a reducer."""
+    return current
 
 
 def _filter_event(
@@ -20,12 +27,33 @@ def _filter_event(
     return {k: event[k] for k in include if k != "model" and k in event}
 
 
+@overload
 def collect(
     events: Iterable[dict[str, Any]],
     *,
     include: Sequence[str] | None = None,
     exclude: Sequence[str] | None = None,
-) -> list[dict[str, Any]]:
+    reducers: None = None,
+) -> list[dict[str, Any]]: ...
+
+
+@overload
+def collect(
+    events: Iterable[dict[str, Any]],
+    *,
+    include: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    reducers: _Reducers,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]: ...
+
+
+def collect(
+    events: Iterable[dict[str, Any]],
+    *,
+    include: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    reducers: _Reducers | None = None,
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], dict[str, Any]]:
     """Collect an event stream into a list of filtered event dicts.
 
     Args:
@@ -36,9 +64,14 @@ def collect(
         exclude: Optional list of keys to drop. When ``include`` is not provided,
             events are copied with these keys removed. ``"model"`` is always excluded
             by default.
+        reducers: Event keys mapped to ``(accumulator, value)`` callables. The first
+            value initializes each accumulator. Reducers read unfiltered fields
+            and must not mutate input values. Accumulator values are not copied.
 
     Returns:
-        A list of shallow-copied event dicts after applying the requested filtering.
+        With ``reducers=None``, a list of shallow-copied, filtered event dicts.
+        Supplying a mapping (including ``{}``) returns ``(history, reduction)``.
+        An empty stream produces an empty reduction dictionary.
 
     Example:
         >>> events = [
@@ -49,14 +82,29 @@ def collect(
         [{'step': 1, 'train_loss': 0.5}, {'step': 2, 'train_loss': 0.4}]
         >>> collect(events, include=["step"])
         [{'step': 1}, {'step': 2}]
+        >>> collect(events, include=["step"], reducers={"train_loss": min})
+        ([{'step': 1}, {'step': 2}], {'train_loss': 0.4})
 
     Notes:
         - Provide only one of ``include`` or ``exclude``; passing both raises
           ``ValueError``.
         - The input iterable is consumed.
         - Missing keys named in ``include`` are ignored.
+        - Missing reducer keys raise ``KeyError``; reducer exceptions propagate.
+        - Non-callable reducers raise ``TypeError`` before consuming the stream.
     """
-    return [_filter_event(event, include=include, exclude=exclude) for event in events]
+    operations = dict(reducers) if reducers is not None else {}
+    for key, reducer in operations.items():
+        if not callable(reducer):
+            raise TypeError(f"Reducer for {key!r} must be callable.")
+    history: list[dict[str, Any]] = []
+    reduction: dict[str, Any] = {}
+    for event in events:
+        for key, reducer in operations.items():
+            value = event[key]
+            reduction[key] = reducer(reduction[key], value) if key in reduction else value
+        history.append(_filter_event(event, include=include, exclude=exclude))
+    return history if reducers is None else (history, reduction)
 
 
 def collect_jsonl(
