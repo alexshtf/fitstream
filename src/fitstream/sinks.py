@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any, TextIO, overload
+from typing import TYPE_CHECKING, Any, TextIO, overload
+
+if TYPE_CHECKING:
+    from pandas import DataFrame
 
 _Reducers = Mapping[str, Callable[[Any, Any], Any]]
 
@@ -189,12 +194,33 @@ def collect_jsonl(
     return reduction if reducers is not None else None
 
 
+@overload
 def collect_pd(
     events: Iterable[dict[str, Any]],
     *,
     include: Sequence[str] | None = None,
     exclude: Sequence[str] | None = None,
-):
+    reducers: None = None,
+) -> DataFrame: ...
+
+
+@overload
+def collect_pd(
+    events: Iterable[dict[str, Any]],
+    *,
+    include: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    reducers: _Reducers,
+) -> tuple[DataFrame, dict[str, Any]]: ...
+
+
+def collect_pd(
+    events: Iterable[dict[str, Any]],
+    *,
+    include: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    reducers: _Reducers | None = None,
+) -> DataFrame | tuple[DataFrame, dict[str, Any]]:
     """Collect an event stream into a pandas DataFrame.
 
     Args:
@@ -203,9 +229,13 @@ def collect_pd(
             omitted even if listed here.
         exclude: Optional list of keys to drop. When ``include`` is not provided,
             ``"model"`` is excluded by default along with any keys listed here.
+        reducers: Per-field reducers with the same initialization, filtering, and
+            error rules as ``collect``. Reductions use values before DataFrame conversion.
 
     Returns:
-        A pandas ``DataFrame`` with one row per event after filtering.
+        With ``reducers=None``, a pandas ``DataFrame`` of filtered event records.
+        Supplying a mapping (including ``{}``) returns ``(dataframe, reduction)``.
+        With reducers supplied, an empty stream produces an empty DataFrame and reduction dictionary.
 
     Example:
         >>> df = collect_pd(
@@ -226,5 +256,8 @@ def collect_pd(
         import pandas as pd
     except Exception as exc:  # pragma: no cover - depends on optional dependency
         raise ImportError("pandas is required for collect_pd.") from exc
-    rows = [_filter_event(event, include=include, exclude=exclude) for event in events]
-    return pd.DataFrame(rows)
+    match collect(events, include=include, exclude=exclude, reducers=reducers):
+        case tuple((rows, reduction)):
+            return pd.DataFrame(rows), reduction
+        case list() as rows:
+            return pd.DataFrame(rows)

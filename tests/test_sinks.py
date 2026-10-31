@@ -183,7 +183,8 @@ def test_collect_jsonl_preserves_file_ownership_on_error(tmp_path, monkeypatch, 
     assert buffer.closed is owned
 
 
-def test_collect_pd_handles_missing_dependency(monkeypatch) -> None:
+@pytest.mark.parametrize("kwargs", [{}, {"reducers": {"step": last_value}}])
+def test_collect_pd_handles_missing_dependency(monkeypatch, kwargs) -> None:
     import builtins
 
     real_import = builtins.__import__
@@ -196,9 +197,39 @@ def test_collect_pd_handles_missing_dependency(monkeypatch) -> None:
     monkeypatch.setattr(builtins, "__import__", fake_import)
 
     with pytest.raises(ImportError, match="pandas is required for collect_pd"):
-        collect_pd([{"step": 1, "loss": 0.5}])
+        collect_pd([{"step": 1, "loss": 0.5}], **kwargs)
 
 
 def test_collect_pd_creates_dataframe() -> None:
     df = collect_pd([{"step": 1, "loss": 0.5, "model": object()}])
     assert list(df.columns) == ["step", "loss"]
+
+
+@pytest.mark.parametrize("filtering", [{"include": ["loss"]}, {"exclude": ["payload"]}])
+def test_collect_pd_reduces_raw_fields_while_filtering_history(filtering) -> None:
+    payloads = [object(), object()]
+    events = (
+        {"loss": loss, "payload": payload, "model": object()} for loss, payload in zip([3, 1], payloads, strict=True)
+    )
+    frame, reduction = collect_pd(events, **filtering, reducers={"loss": min, "payload": last_value})
+    assert frame.to_dict("records") == [{"loss": 3}, {"loss": 1}]
+    assert reduction == {"loss": 1, "payload": payloads[-1]}
+    assert reduction["payload"] is payloads[-1]
+
+
+@pytest.mark.parametrize("events", [[], [{"x": 1}], [{"x": 1}, {"x": 2}]])
+@pytest.mark.parametrize("kwargs", [{}, {"reducers": None}, {"reducers": {}}, {"reducers": {"x": last_value}}])
+def test_collect_pd_return_forms(events, kwargs) -> None:
+    result = collect_pd(iter(events), **kwargs)
+    if kwargs.get("reducers") is None:
+        assert result.to_dict("records") == events
+    else:
+        frame, reduction = result
+        assert frame.to_dict("records") == events
+        assert reduction == (events[-1] if events and kwargs["reducers"] else {})
+
+
+def test_collect_pd_reduces_before_dataframe_coercion() -> None:
+    frame, reduction = collect_pd([{"x": 1}, {"x": None}], reducers={"x": last_value})
+    assert frame["x"].isna().tolist() == [False, True]
+    assert reduction["x"] is None
