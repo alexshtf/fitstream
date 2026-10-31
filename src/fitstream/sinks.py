@@ -1,5 +1,6 @@
 import json
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, TextIO, overload
 
@@ -9,6 +10,20 @@ _Reducers = Mapping[str, Callable[[Any, Any], Any]]
 def last_value(previous: Any, current: Any) -> Any:
     """Return the current value unchanged, for use as a reducer."""
     return current
+
+
+def _prepare_reducers(reducers: _Reducers | None) -> _Reducers:
+    operations = dict(reducers) if reducers is not None else {}
+    for key, reducer in operations.items():
+        if not callable(reducer):
+            raise TypeError(f"Reducer for {key!r} must be callable.")
+    return operations
+
+
+def _reduce_event(event: dict[str, Any], reduction: dict[str, Any], reducers: _Reducers) -> None:
+    for key, reducer in reducers.items():
+        value = event[key]
+        reduction[key] = reducer(reduction[key], value) if key in reduction else value
 
 
 def _filter_event(
@@ -93,18 +108,35 @@ def collect(
         - Missing reducer keys raise ``KeyError``; reducer exceptions propagate.
         - Non-callable reducers raise ``TypeError`` before consuming the stream.
     """
-    operations = dict(reducers) if reducers is not None else {}
-    for key, reducer in operations.items():
-        if not callable(reducer):
-            raise TypeError(f"Reducer for {key!r} must be callable.")
+    operations = _prepare_reducers(reducers)
     history: list[dict[str, Any]] = []
     reduction: dict[str, Any] = {}
     for event in events:
-        for key, reducer in operations.items():
-            value = event[key]
-            reduction[key] = reducer(reduction[key], value) if key in reduction else value
+        _reduce_event(event, reduction, operations)
         history.append(_filter_event(event, include=include, exclude=exclude))
     return history if reducers is None else (history, reduction)
+
+
+@overload
+def collect_jsonl(
+    events: Iterable[dict[str, Any]],
+    dest: str | Path | TextIO,
+    *,
+    include: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    reducers: None = None,
+) -> None: ...
+
+
+@overload
+def collect_jsonl(
+    events: Iterable[dict[str, Any]],
+    dest: str | Path | TextIO,
+    *,
+    include: Sequence[str] | None = None,
+    exclude: Sequence[str] | None = None,
+    reducers: _Reducers,
+) -> dict[str, Any]: ...
 
 
 def collect_jsonl(
@@ -113,7 +145,8 @@ def collect_jsonl(
     *,
     include: Sequence[str] | None = None,
     exclude: Sequence[str] | None = None,
-) -> None:
+    reducers: _Reducers | None = None,
+) -> dict[str, Any] | None:
     """Write an event stream to JSON Lines format.
 
     Args:
@@ -124,9 +157,12 @@ def collect_jsonl(
             always omitted even if listed here.
         exclude: Optional list of keys to drop. When ``include`` is not provided,
             ``"model"`` is excluded by default along with any keys listed here.
+        reducers: Per-field reducers with the same initialization, filtering, and
+            error rules as ``collect``. Values are not copied or serialized by reduction.
 
     Returns:
-        ``None``. The function writes one JSON object per line to ``dest``.
+        ``None`` when ``reducers=None``; otherwise the reduction dictionary (empty
+        for an empty stream). Records are written incrementally, not retained in memory.
 
     Example:
         >>> import io
@@ -143,13 +179,14 @@ def collect_jsonl(
         - Remaining event values must be JSON-serializable by ``json.dumps``.
         - When ``dest`` is a path, the file is opened in text write mode and overwritten.
     """
-    if isinstance(dest, (str, Path)):
-        with Path(dest).open("w") as handle:
-            collect_jsonl(events, handle, include=include, exclude=exclude)
-        return
-    for event in events:
-        record = _filter_event(event, include=include, exclude=exclude)
-        dest.write(json.dumps(record) + "\n")
+    operations = _prepare_reducers(reducers)
+    reduction: dict[str, Any] = {}
+    with Path(dest).open("w") if isinstance(dest, (str, Path)) else nullcontext(dest) as handle:
+        for event in events:
+            _reduce_event(event, reduction, operations)
+            record = _filter_event(event, include=include, exclude=exclude)
+            handle.write(json.dumps(record) + "\n")
+    return reduction if reducers is not None else None
 
 
 def collect_pd(

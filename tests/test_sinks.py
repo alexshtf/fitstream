@@ -106,25 +106,81 @@ def test_collect_validates_reducers_before_consuming() -> None:
         collect(events(), reducers={"x": None})
 
 
-def test_collect_jsonl_accepts_file_object() -> None:
+@pytest.mark.parametrize(
+    "kwargs,expected", [({}, None), ({"reducers": {}}, {}), ({"reducers": {"loss": min}}, {"loss": 0.5})]
+)
+def test_collect_jsonl_accepts_file_object(kwargs, expected) -> None:
     events = [{"step": 1, "model": object(), "loss": 0.5}]
     buffer = io.StringIO()
 
-    collect_jsonl(events, buffer)
+    assert collect_jsonl(events, buffer, **kwargs) == expected
+    assert not buffer.closed
 
     buffer.seek(0)
     record = json.loads(buffer.read().strip())
     assert record == {"step": 1, "loss": 0.5}
 
 
-def test_collect_jsonl_writes_path(tmp_path) -> None:
+@pytest.mark.parametrize("kwargs,expected", [({}, None), ({"reducers": {"loss": min}}, {"loss": 0.5})])
+def test_collect_jsonl_writes_path(tmp_path, kwargs, expected) -> None:
     path = tmp_path / "events.jsonl"
     events = [{"step": 1, "model": object(), "loss": 0.5}]
 
-    collect_jsonl(events, path)
+    assert collect_jsonl(events, path, **kwargs) == expected
 
     lines = path.read_text().splitlines()
     assert json.loads(lines[0]) == {"step": 1, "loss": 0.5}
+
+
+@pytest.mark.parametrize("use_path", [False, True])
+@pytest.mark.parametrize("reducers,expected", [(None, None), ({}, {}), ({"x": min}, {})])
+def test_collect_jsonl_empty_stream(tmp_path, use_path, reducers, expected) -> None:
+    dest = tmp_path / "empty.jsonl" if use_path else io.StringIO()
+    assert collect_jsonl([], dest, reducers=reducers) == expected
+
+
+@pytest.mark.parametrize("filtering", [{"include": ["step"]}, {"exclude": ["payload"]}])
+def test_collect_jsonl_reduces_excluded_payloads_while_writing_incrementally(filtering) -> None:
+    buffer = io.StringIO()
+    payloads = [object(), object()]
+
+    def events():
+        for step, payload in enumerate(payloads, start=1):
+            # The previous record must be written before requesting another event.
+            assert len(buffer.getvalue().splitlines()) == step - 1
+            yield {"step": step, "payload": payload}
+
+    reduction = collect_jsonl(events(), buffer, **filtering, reducers={"step": add, "payload": last_value})
+    assert reduction == {"step": 3, "payload": payloads[-1]}
+    assert reduction["payload"] is payloads[-1]
+    assert [json.loads(line) for line in buffer.getvalue().splitlines()] == [{"step": 1}, {"step": 2}]
+
+
+def test_collect_jsonl_validates_reducers_before_opening_path(tmp_path) -> None:
+    path = tmp_path / "events.jsonl"
+    path.write_text("existing content")
+    with pytest.raises(TypeError, match="callable"):
+        collect_jsonl([], path, reducers={"x": None})
+    assert path.read_text() == "existing content"
+
+
+@pytest.mark.parametrize("owned", [False, True])
+@pytest.mark.parametrize(
+    "events,reducers,error",
+    [
+        ([{}], {"missing": min}, KeyError),
+        ([{"x": 1}, {"x": 0}], {"x": truediv}, ZeroDivisionError),
+        ([{"x": object()}], {}, TypeError),
+    ],
+)
+def test_collect_jsonl_preserves_file_ownership_on_error(tmp_path, monkeypatch, owned, events, reducers, error) -> None:
+    buffer = io.StringIO()
+    dest = tmp_path / "events.jsonl" if owned else buffer
+    if owned:
+        monkeypatch.setattr(type(dest), "open", lambda *args, **kwargs: buffer)
+    with pytest.raises(error):
+        collect_jsonl(iter(events), dest, reducers=reducers)
+    assert buffer.closed is owned
 
 
 def test_collect_pd_handles_missing_dependency(monkeypatch) -> None:
